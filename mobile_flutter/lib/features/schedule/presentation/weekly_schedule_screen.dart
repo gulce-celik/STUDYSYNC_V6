@@ -121,20 +121,27 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
   void _openSheet(String day, String time) {
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
         return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('$day $time', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
-              const Text('Select block type', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
-              const SizedBox(height: 12),
-              _typeTile(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 12,
+            bottom: 24 + MediaQuery.of(ctx).padding.bottom,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('$day $time', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                const Text('Select block type', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+                const SizedBox(height: 12),
+                _typeTile(
                 title: 'Lesson',
                 subtitle: 'Class schedule',
                 color: const Color(0xFFEF4444),
@@ -182,7 +189,8 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Slot cleared')));
                 },
               ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -226,11 +234,12 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
           builder: (context, setDialogState) {
             return AlertDialog(
               title: const Text('Add Exam'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  DropdownButtonFormField<String>(
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    DropdownButtonFormField<String>(
                     initialValue: selectedCourse,
                     decoration: const InputDecoration(labelText: 'Course', border: OutlineInputBorder()),
                     items: RegistrationMockData.courses
@@ -255,7 +264,8 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
                       'Exam Date: ${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}',
                     ),
                   ),
-                ],
+                  ],
+                ),
               ),
               actions: [
                 TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),

@@ -28,7 +28,7 @@ public class ResponsibilityScoreService {
     public void applyDelta(long userId, int delta) {
         final UserAccount u =
                 userAccountRepository.findById(userId).orElseThrow(() -> new IllegalStateException("user not found"));
-        int next = (u.getResponsibilityScore() == null ? 50 : u.getResponsibilityScore()) + delta;
+        int next = (u.getResponsibilityScore() == null ? 100 : u.getResponsibilityScore()) + delta;
         next = Math.max(0, Math.min(100, next));
         u.setResponsibilityScore(next);
         userAccountRepository.save(u);

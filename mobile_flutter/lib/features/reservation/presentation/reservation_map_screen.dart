@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 
 import '../../../core/planner/ai_study_controller.dart';
+import '../../../core/trust/responsibility_ledger.dart';
 import '../data/reservation_api.dart';
 import '../data/reservation_mock_data.dart';
 import '../domain/reservation_models.dart';
@@ -302,10 +303,9 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
   }
 
   Future<void> _confirmReservation() async {
-    if (ReservationMockData.mockResponsibilityScore < 70) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Responsibility score too low (need 70+)')),
-      );
+    final block = ResponsibilityLedger.instance.canAttemptReservation();
+    if (block != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(block)));
       return;
     }
     if (_selectedWorkspaceId == null || _selectedSlot.isEmpty || _selectedCourse.isEmpty) {
@@ -352,6 +352,8 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
       final msg = instant
           ? 'Instant reservation confirmed (${created.id})'
           : (_reservationType == ReservationType.group ? 'Invites sent (${created.id})' : 'Reservation confirmed (${created.id})');
+      ResponsibilityLedger.instance.recordReservationConfirmed();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       setState(() {
         _selectedWorkspaceId = null;
@@ -431,6 +433,8 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildFilterRow(),
+                  const SizedBox(height: 6),
+                  _buildResponsibilityPolicyBanner(),
                   const SizedBox(height: 6),
                   _buildLegend(),
                   const SizedBox(height: 8),
@@ -724,6 +728,55 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
                 }),
               ],
             ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildResponsibilityPolicyBanner() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return ListenableBuilder(
+      listenable: ResponsibilityLedger.instance,
+      builder: (context, _) {
+        final L = ResponsibilityLedger.instance;
+        final line = L.reserveDemoBannerLine();
+        final high = L.effectiveScore >= 85;
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: isDark
+                ? (high ? const Color(0xFF1C2E1E) : const Color(0xFF1E2A3D))
+                : (high ? const Color(0xFFF0FDF4) : const Color(0xFFFFFBEB)),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: high
+                  ? (isDark ? const Color(0xFF34D399) : const Color(0xFFA7F3D0))
+                  : (isDark ? const Color(0xFFFBBF24) : const Color(0xFFFDE68A)),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                high ? Icons.verified_user_outlined : Icons.tune_rounded,
+                size: 16,
+                color: high ? const Color(0xFF059669) : const Color(0xFFD97706),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '$line\n'
+                  'This session: ${L.reservationsThisSession}/${L.maxReservationsThisSessionForScore()} bookings used (demo).',
+                  style: TextStyle(
+                    fontSize: 10,
+                    height: 1.35,
+                    color: isDark ? const Color(0xFFECFDF5) : (high ? const Color(0xFF14532D) : const Color(0xFF713F12)),
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       },

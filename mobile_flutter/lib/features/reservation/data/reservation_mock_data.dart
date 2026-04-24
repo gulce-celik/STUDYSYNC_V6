@@ -9,7 +9,8 @@ class ReservationMockData {
 
   static const List<String> instantDeskIds = ['desk-2', 'desk-15'];
 
-  static const int mockResponsibilityScore = 92;
+  /// Demo/offline — align with [HomeMockData.responsibilityScore] when not using server.
+  static const int mockResponsibilityScore = 75;
 
   static final List<TimeSlot> timeSlots = [
     TimeSlot(id: 'slot-1', label: '06:00 - 09:00 (Morning)'),

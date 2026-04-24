@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/planner/ai_study_controller.dart';
 import '../../../core/session/auth_session.dart';
+import '../../../core/trust/responsibility_ledger.dart';
 import '../../../core/network/dashboard_api.dart';
 import '../../../shared/navigation/app_tab_controller.dart';
 import '../../courses/presentation/course_rating_screen.dart';
@@ -20,28 +21,38 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late List<HomeGroupInvitation> _invitations;
   final Set<String> _demoCheckedInIds = <String>{};
-  int? _apiResponsibilityScore;
   int? _apiTotalReservations;
   int? _apiActiveToday;
   List<HomeUpcomingReservation>? _apiUpcomingReservations;
+
+  void _onLedgerChanged() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void initState() {
     super.initState();
     _invitations = HomeMockData.initialInvitations();
+    ResponsibilityLedger.instance.setHomeContext(mockOnly: HomeMockData.responsibilityScore);
+    ResponsibilityLedger.instance.addListener(_onLedgerChanged);
     _loadDashboard();
+  }
+
+  @override
+  void dispose() {
+    ResponsibilityLedger.instance.removeListener(_onLedgerChanged);
+    super.dispose();
   }
 
   /// GET /dashboard/home — PDF’deki sorumluluk puanı; hata olursa mock kalır.
   Future<void> _loadDashboard() async {
     try {
       final d = await DashboardApi().getHome();
-      final s = d['responsibilityScore'];
       final quickStats = d['quickStats'];
       final upcomingRaw = d['upcomingReservations'];
       if (!mounted) return;
       setState(() {
-        if (s is num) _apiResponsibilityScore = s.toInt();
+        ResponsibilityLedger.instance.setHomeContext(mockOnly: HomeMockData.responsibilityScore);
         if (quickStats is Map<String, dynamic>) {
           final total = quickStats['totalReservations'];
           final active = quickStats['activeToday'];
@@ -131,6 +142,9 @@ class _HomeScreenState extends State<HomeScreen> {
         : HomeMockData.upcomingReservations;
     final sessions = _apiTotalReservations ?? 8;
     final activeToday = _apiActiveToday ?? upcoming.length;
+    // Hero badge: mock 75 (display) + buddy-listing delta; real DB score not shown. Reserve: session caps;
+    // only per-session caps (reduced “rights” demo). BuddyListingScoreIntegrationNotes.java (BE).
+    final displayScore = ResponsibilityLedger.instance.effectiveScore;
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF9FAFB),
       body: ListView(
@@ -174,7 +188,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           const Icon(Icons.emoji_events_rounded, color: Color(0xFFFDE047), size: 16),
                           const SizedBox(width: 4),
-                          Text('${_apiResponsibilityScore ?? HomeMockData.responsibilityScore}%',
+                          Text('$displayScore%',
                               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
                         ],
                       ),

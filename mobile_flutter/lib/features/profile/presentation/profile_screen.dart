@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/auth/auth_scope.dart';
 import '../../../core/planner/ai_study_controller.dart';
 import '../../../core/session/auth_session.dart';
+import '../../../core/trust/responsibility_ledger.dart';
 import '../../../core/theme/theme_mode_controller.dart';
 import '../../auth/data/registration_mock_data.dart';
 import '../../schedule/presentation/weekly_schedule_screen.dart';
@@ -206,7 +207,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final name = (session.userName?.trim().isNotEmpty ?? false) ? session.userName!.trim() : 'Student';
     final dept = (session.userDepartment?.trim().isNotEmpty ?? false) ? session.userDepartment!.trim() : 'Computer Engineering';
     final year = session.userYear ?? 3;
-    const score = 92;
     final courses = _userCourses();
     final nickname = (session.userNickname?.trim().isNotEmpty ?? false) ? session.userNickname!.trim() : ProfileMockData.nickname;
 
@@ -277,34 +277,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             color: Colors.white.withValues(alpha: 0.22),
                             borderRadius: BorderRadius.circular(14),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          child: ListenableBuilder(
+                            listenable: ResponsibilityLedger.instance,
+                            builder: (context, _) {
+                              final score = ResponsibilityLedger.instance.effectiveScore;
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('Responsibility Score', style: TextStyle(color: Colors.white.withValues(alpha: 0.95), fontSize: 10)),
-                                  const Icon(Icons.emoji_events_rounded, color: Color(0xFFFDE047), size: 18),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text('Responsibility Score', style: TextStyle(color: Colors.white.withValues(alpha: 0.95), fontSize: 10)),
+                                      const Icon(Icons.emoji_events_rounded, color: Color(0xFFFDE047), size: 18),
+                                    ],
+                                  ),
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text('$score', style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w800)),
+                                      const Text('%', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(99),
+                                    child: LinearProgressIndicator(
+                                      value: score / 100,
+                                      minHeight: 4,
+                                      backgroundColor: Colors.white.withValues(alpha: 0.35),
+                                      valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                                    ),
+                                  ),
                                 ],
-                              ),
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text('$score', style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w800)),
-                                  const Text('%', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(99),
-                                child: LinearProgressIndicator(
-                                  value: score / 100,
-                                  minHeight: 4,
-                                  backgroundColor: Colors.white.withValues(alpha: 0.35),
-                                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
-                                ),
-                              ),
-                            ],
+                              );
+                            },
                           ),
                         ),
                       ],

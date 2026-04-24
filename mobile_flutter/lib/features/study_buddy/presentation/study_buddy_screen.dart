@@ -2,11 +2,14 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/planner/ai_study_controller.dart';
+import '../../../core/session/auth_session.dart';
+import '../../../core/trust/responsibility_ledger.dart';
 import '../../reservation/data/reservation_mock_data.dart';
 import '../../schedule/data/schedule_api.dart';
 import '../../schedule/data/schedule_mock_data.dart';
 import '../data/study_buddy_api.dart';
 import '../data/study_buddy_mock_data.dart';
+import '../../home/data/home_mock_data.dart';
 
 /// Figma Make / React `StudyBuddy.tsx` — filtre + GET /study-buddies/suggestions; boşta mock.
 class StudyBuddyScreen extends StatefulWidget {
@@ -23,10 +26,17 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
   String _slotId = 'slot-2';
   String _selectedYear = '';
   String _selectedPreference = '';
+  String _genderPreference = '';
+  int _minSessionMinutes = 0;
+  String _preferredWeekday = '';
+  String _focusFilter = '';
   int _minMatchScore = 0;
   String? _aiBuddySuggestion;
   String? _suggestedCourseCode;
   String? _suggestedSlotId;
+  /// AI’den türetilen; sadece [Apply] basılınca filtre alanlarına kopyalanır
+  String? _aiSuggestedWeekday;
+  String? _aiSuggestedYearLabel;
   String? _upcomingExamCourse;
   DateTime? _upcomingExamDate;
   List<StudyBuddyMockRow> _results = [];
@@ -37,6 +47,10 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
 
   final _myListingNote = TextEditingController();
   String _myListingCourse = '';
+  /// e.g. Exam prep, project — required to post
+  String _myListingPurpose = '';
+  String _myListingPreferredWeekday = '';
+  String _myListingPreferredSlotId = 'slot-2';
 
   final _reportReason = TextEditingController();
   StudyBuddyMockRow? _reportingBuddy;
@@ -44,6 +58,7 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
   @override
   void initState() {
     super.initState();
+    ResponsibilityLedger.instance.setHomeContext(mockOnly: HomeMockData.responsibilityScore);
     _courseCode = ReservationMockData.courses.isNotEmpty ? ReservationMockData.courses.first.code : 'CSE344';
     _myListingCourse = _courseCode;
     _results = List.of(StudyBuddyMockData.buddies);
@@ -62,13 +77,94 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
 
+  static const _kShortDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  String? _academicYearFromSession() {
+    final y = AuthSession.instance.userYear;
+    if (y == null || y < 1 || y > 4) return null;
+    return switch (y) {
+      1 => 'Freshman',
+      2 => 'Sophomore',
+      3 => 'Junior',
+      4 => 'Senior',
+      _ => null,
+    };
+  }
+
+  String? _weekdayFromMessage(String? message) {
+    if (message == null || message.isEmpty) return null;
+    final m = RegExp(r'(?:^|\s)(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b').firstMatch(message);
+    return m?.group(1);
+  }
+
+  String? _weekdayFromDateIso(String? dateIso) {
+    if (dateIso == null || dateIso.isEmpty) return null;
+    final d = DateTime.tryParse(dateIso);
+    if (d == null) return null;
+    return _kShortDays[d.weekday - 1];
+  }
+
+  TextStyle _filterLabelStyle(bool isDark) {
+    return TextStyle(
+      fontWeight: FontWeight.w700,
+      fontSize: 13,
+      color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF1E3A8A),
+    );
+  }
+
+  InputDecoration _filterFieldDecoration(bool isDark) {
+    return InputDecoration(
+      filled: true,
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
+      ),
+    );
+  }
+
   bool _passesLocalFilters(StudyBuddyMockRow row) {
     if (row.matchScore < _minMatchScore) return false;
+
     if (_selectedYear.isNotEmpty) {
-      // Backend v1 response does not include year yet; keep row to avoid hiding valid matches.
+      if (row.academicYear != null && row.academicYear!.isNotEmpty) {
+        if (row.academicYear != _selectedYear) return false;
+      }
     }
     if (_selectedPreference.isNotEmpty) {
-      // Backend v1 response does not include preference yet; keep row to avoid hiding valid matches.
+      if (row.studyStyle != null && row.studyStyle!.isNotEmpty) {
+        if (row.studyStyle != _selectedPreference) return false;
+      }
+    }
+    if (_genderPreference.isNotEmpty) {
+      if (row.gender != null && row.gender!.isNotEmpty) {
+        if (row.gender != _genderPreference) return false;
+      }
+    }
+    if (_minSessionMinutes > 0) {
+      if (row.sessionLengthOfferedMinutes != null) {
+        if (row.sessionLengthOfferedMinutes! < _minSessionMinutes) return false;
+      }
+    }
+    if (_preferredWeekday.isNotEmpty) {
+      if (row.typicalWeekday != null && row.typicalWeekday!.isNotEmpty) {
+        if (row.typicalWeekday != _preferredWeekday) return false;
+      }
+    }
+    if (_focusFilter.isNotEmpty) {
+      if (row.studyFocus != null && row.studyFocus!.isNotEmpty) {
+        if (row.studyFocus != _focusFilter) return false;
+      }
     }
     return true;
   }
@@ -78,12 +174,15 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
     String? suggestionMessage;
     String? suggestedCourse;
     String? suggestedSlot;
+    String? aiWeek;
+    final aiYear = _academicYearFromSession();
 
     if (controllerItems.isNotEmpty) {
       final first = controllerItems.first;
       suggestionMessage = first.message;
       suggestedCourse = first.courseCode;
       suggestedSlot = _slotIdFromLabel(first.slotLabel);
+      aiWeek = _weekdayFromMessage(first.message) ?? _weekdayFromDateIso(first.dateIso);
     }
 
     try {
@@ -104,6 +203,8 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
           _aiBuddySuggestion = suggestionMessage;
           _suggestedCourseCode = suggestedCourse;
           _suggestedSlotId = suggestedSlot;
+          _aiSuggestedWeekday = examDate != null ? _kShortDays[examDate.weekday - 1] : null;
+          _aiSuggestedYearLabel = aiYear;
         });
         return;
       }
@@ -117,6 +218,8 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
       _aiBuddySuggestion = suggestionMessage ?? 'AI Suggestion: Try matching with a buddy for your next tough course this week.';
       _suggestedCourseCode = suggestedCourse;
       _suggestedSlotId = suggestedSlot;
+      _aiSuggestedWeekday = aiWeek;
+      _aiSuggestedYearLabel = aiYear;
     });
   }
 
@@ -167,16 +270,22 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
       if (!mounted) return;
       if (raw.isEmpty) {
         setState(() {
-          _results = StudyBuddyMockData.buddies
+          var list = StudyBuddyMockData.buddies
               .where((b) => b.commonCourses.any((c) => c == _courseCode))
               .where(_passesLocalFilters)
               .toList();
-          if (_results.isEmpty) _results = List.of(StudyBuddyMockData.buddies);
+          if (list.isEmpty) {
+            list = StudyBuddyMockData.buddies.where((b) => b.commonCourses.any((c) => c == _courseCode)).toList();
+          }
+          if (list.isEmpty) {
+            list = List.of(StudyBuddyMockData.buddies);
+          }
+          _results = list;
           _fromFallback = true;
           _loading = false;
           _showFilters = false;
         });
-        _toast('Server returned no matches, showing sample buddies.');
+        _toast('Server returned no matches — using sample data with your filters (relaxed if needed).');
         return;
       }
       final mapped = raw.map((m) {
@@ -188,10 +297,20 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
           matchScore: (m['matchScore'] as num?)?.toInt() ?? 0,
           commonCourses: cc is List ? cc.map((e) => e.toString()).toList() : <String>[],
           commonTopics: ct is List ? ct.map((e) => e.toString()).toList() : <String>[],
+          gender: m['gender']?.toString(),
+          academicYear: m['academicYear']?.toString(),
+          studyStyle: m['studyStyle']?.toString(),
+          typicalWeekday: m['typicalWeekday']?.toString(),
+          sessionLengthOfferedMinutes: (m['sessionLengthOfferedMinutes'] as num?)?.toInt(),
+          studyFocus: m['studyFocus']?.toString(),
         );
       }).toList();
       setState(() {
         _results = mapped.where(_passesLocalFilters).toList();
+        if (_results.isEmpty && mapped.isNotEmpty) {
+          _results = mapped;
+          _toast('No API rows match strict filters — showing all server results.');
+        }
         _fromFallback = false;
         _loading = false;
         _showFilters = false;
@@ -199,12 +318,19 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
     } on DioException {
       if (!mounted) return;
       setState(() {
-        _results = List.of(StudyBuddyMockData.buddies);
+        var list = StudyBuddyMockData.buddies
+            .where((b) => b.commonCourses.any((c) => c == _courseCode))
+            .where(_passesLocalFilters)
+            .toList();
+        if (list.isEmpty) {
+          list = List.of(StudyBuddyMockData.buddies);
+        }
+        _results = list;
         _fromFallback = true;
         _loading = false;
         _showFilters = false;
       });
-      _toast('Offline: showing sample buddies.');
+      _toast('Offline: sample buddies (filters applied when data allows).');
     }
   }
 
@@ -256,10 +382,36 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
       _toast('Select a course for your listing.');
       return;
     }
-    _toast('Listing created for $_myListingCourse.');
+    if (_myListingPurpose.isEmpty) {
+      _toast('Select what you are studying for (exam, project, etc.).');
+      return;
+    }
+    final block = ResponsibilityLedger.instance.tryConsumeBuddyListing();
+    if (block != null) {
+      _toast(block);
+      return;
+    }
+    var slotPart = '';
+    for (final ts in ReservationMockData.timeSlots) {
+      if (ts.id == _myListingPreferredSlotId) {
+        slotPart = ts.label;
+        break;
+      }
+    }
+    final dayPart = _myListingPreferredWeekday.isEmpty
+        ? 'any day'
+        : _myListingPreferredWeekday;
+    final details =
+        '$_myListingCourse · $_myListingPurpose · prefers $dayPart'
+        '${slotPart.isNotEmpty ? ' · $slotPart' : ''}';
+    _toast(
+      'Listing posted: $details '
+      '(-${ResponsibilityLedger.scoreCostPerBuddyListing} score → ${ResponsibilityLedger.instance.effectiveScore}%)',
+    );
     setState(() {
       _showMyListing = false;
       _myListingNote.clear();
+      _myListingPurpose = '';
     });
   }
 
@@ -422,6 +574,19 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                             if (_suggestedSlotId != null && _suggestedSlotId!.isNotEmpty) {
                               _slotId = _suggestedSlotId!;
                             }
+                            if (_aiSuggestedWeekday != null && _aiSuggestedWeekday!.isNotEmpty) {
+                              _preferredWeekday = _aiSuggestedWeekday!;
+                            }
+                            if (_aiSuggestedYearLabel != null && _aiSuggestedYearLabel!.isNotEmpty) {
+                              _selectedYear = _aiSuggestedYearLabel!;
+                            }
+                            _minSessionMinutes = 120;
+                            if (_upcomingExamDate != null) {
+                              _minMatchScore = 70;
+                              _focusFilter = 'Exam prep';
+                            } else {
+                              _focusFilter = '';
+                            }
                             _showFilters = true;
                           });
                         },
@@ -436,7 +601,26 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                 ),
                 const SizedBox(height: 14),
                 FilledButton.icon(
-                  onPressed: () => setState(() => _showMyListing = !_showMyListing),
+                  onPressed: () {
+                    setState(() {
+                      final open = !_showMyListing;
+                      _showMyListing = open;
+                      if (open) {
+                        _myListingCourse = _courseCode;
+                        _myListingPreferredWeekday = _preferredWeekday;
+                        _myListingPreferredSlotId = _slotId;
+                        if (_myListingPurpose.isEmpty && _focusFilter.isNotEmpty) {
+                          if (_focusFilter == 'Exam prep') {
+                            _myListingPurpose = 'Exam prep';
+                          } else if (_focusFilter == 'Project work') {
+                            _myListingPurpose = 'Project / assignment';
+                          } else if (_focusFilter == 'Weekly reviews') {
+                            _myListingPurpose = 'Lecture / weekly review';
+                          }
+                        }
+                      }
+                    });
+                  },
                   icon: const Icon(Icons.person_add_alt_1_rounded),
                   label: const Text('Create My Study Buddy Listing'),
                   style: FilledButton.styleFrom(
@@ -449,47 +633,229 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [Color(0xFFF5F3FF), Color(0xFFFCE7F3)]),
+                      gradient: LinearGradient(
+                        colors: isDark
+                            ? [const Color(0xFF1E1B2E), const Color(0xFF1A1523)]
+                            : [const Color(0xFFF5F3FF), const Color(0xFFFCE7F3)],
+                      ),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE9D5FF)),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF4C1D95) : const Color(0xFFE9D5FF),
+                      ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Text('Post your listing', style: TextStyle(fontWeight: FontWeight.w800)),
-                        const SizedBox(height: 8),
+                        Text(
+                          'Post your listing',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: isDark ? const Color(0xFFF3E8FF) : const Color(0xFF4C1D95),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Help others know why you want a buddy and when you usually study.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            height: 1.3,
+                            color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF6B21A8),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        ListenableBuilder(
+                          listenable: ResponsibilityLedger.instance,
+                          builder: (context, _) {
+                            final L = ResponsibilityLedger.instance;
+                            return Text(
+                              '${L.buddyDemoLine()}\n'
+                              'Used: ${L.listingsPosted}/${L.maxBuddyListingsPerSession} · '
+                              'Each post: −${ResponsibilityLedger.scoreCostPerBuddyListing} pt · '
+                              'Current: ${L.effectiveScore}%.',
+                              style: TextStyle(
+                                fontSize: 10,
+                                height: 1.25,
+                                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF7C3AED),
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        Text('Course', style: _filterLabelStyle(isDark)),
+                        const SizedBox(height: 6),
                         DropdownButtonFormField<String>(
                           value: _myListingCourse.isEmpty ? null : _myListingCourse,
-                          decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                          ),
+                          decoration: _filterFieldDecoration(isDark),
                           items: ReservationMockData.courses
-                              .map((c) => DropdownMenuItem(value: c.code, child: Text('${c.code} - ${c.name}', style: const TextStyle(fontSize: 12))))
+                              .map(
+                                (c) => DropdownMenuItem(
+                                  value: c.code,
+                                  child: Text('${c.code} — ${c.name}', style: const TextStyle(fontSize: 13)),
+                                ),
+                              )
                               .toList(),
                           onChanged: (v) => setState(() => _myListingCourse = v ?? ''),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 10),
+                        Text('What are you studying for? *', style: _filterLabelStyle(isDark)),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String>(
+                          value: _myListingPurpose.isEmpty ? null : _myListingPurpose,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                          ),
+                          hint: const Text('Choose a goal'),
+                          decoration: _filterFieldDecoration(isDark),
+                          items: const [
+                            DropdownMenuItem(value: 'Exam prep', child: Text('Exam prep')),
+                            DropdownMenuItem(value: 'Project / assignment', child: Text('Project / assignment')),
+                            DropdownMenuItem(
+                              value: 'Homework & problem sets',
+                              child: Text('Homework & problem sets'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Lecture / weekly review',
+                              child: Text('Lecture / weekly review'),
+                            ),
+                            DropdownMenuItem(value: 'General study', child: Text('General study')),
+                            DropdownMenuItem(value: 'Other', child: Text('Other')),
+                          ],
+                          onChanged: (v) => setState(() => _myListingPurpose = v ?? ''),
+                        ),
+                        const SizedBox(height: 10),
+                        Text('Preferred day (optional)', style: _filterLabelStyle(isDark)),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String>(
+                          value: _myListingPreferredWeekday.isEmpty ? null : _myListingPreferredWeekday,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                          ),
+                          decoration: _filterFieldDecoration(isDark),
+                          items: const [
+                            DropdownMenuItem(value: '', child: Text('No preference')),
+                            DropdownMenuItem(value: 'Mon', child: Text('Mon')),
+                            DropdownMenuItem(value: 'Tue', child: Text('Tue')),
+                            DropdownMenuItem(value: 'Wed', child: Text('Wed')),
+                            DropdownMenuItem(value: 'Thu', child: Text('Thu')),
+                            DropdownMenuItem(value: 'Fri', child: Text('Fri')),
+                            DropdownMenuItem(value: 'Sat', child: Text('Sat')),
+                            DropdownMenuItem(value: 'Sun', child: Text('Sun')),
+                          ],
+                          onChanged: (v) => setState(() => _myListingPreferredWeekday = v ?? ''),
+                        ),
+                        const SizedBox(height: 10),
+                        Text('Preferred time on campus (optional)', style: _filterLabelStyle(isDark)),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String>(
+                          value: _myListingPreferredSlotId,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                          ),
+                          decoration: _filterFieldDecoration(isDark),
+                          items: ReservationMockData.timeSlots
+                              .map(
+                                (s) => DropdownMenuItem(
+                                  value: s.id,
+                                  child: Text(s.label, style: const TextStyle(fontSize: 13, height: 1.2)),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) => setState(() => _myListingPreferredSlotId = v ?? _myListingPreferredSlotId),
+                        ),
+                        const SizedBox(height: 10),
+                        Text('Note (optional)', style: _filterLabelStyle(isDark)),
+                        const SizedBox(height: 6),
                         TextField(
                           controller: _myListingNote,
-                          maxLines: 2,
-                          decoration: const InputDecoration(
-                            hintText: 'Optional note...',
-                            border: OutlineInputBorder(),
-                            isDense: true,
+                          maxLines: 3,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                          ),
+                          decoration: _filterFieldDecoration(isDark).copyWith(
+                            alignLabelWithHint: true,
+                            hintText: 'e.g. library quiet floor, work in English…',
+                            hintStyle: TextStyle(
+                              color: isDark ? const Color(0xFF64748B) : const Color(0xFF9CA3AF),
+                              fontSize: 13,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        FilledButton(
-                          onPressed: _submitMyListing,
-                          child: const Text('Post Listing'),
+                        const SizedBox(height: 12),
+                        ListenableBuilder(
+                          listenable: ResponsibilityLedger.instance,
+                          builder: (context, _) {
+                            final can = ResponsibilityLedger.instance.canPostAnotherBuddyListing;
+                            return FilledButton(
+                              onPressed: can ? _submitMyListing : null,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: isDark ? const Color(0xFF7C3AED) : const Color(0xFF1E1B4B),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                              ),
+                              child: const Text('Post listing'),
+                            );
+                          },
                         ),
                       ],
                     ),
                   ),
                 ],
                 const SizedBox(height: 10),
-                OutlinedButton.icon(
-                  onPressed: () => setState(() => _showFilters = !_showFilters),
-                  icon: Icon(_showFilters ? Icons.expand_less_rounded : Icons.expand_more_rounded),
-                  label: Text(_showFilters ? 'Hide Filters' : 'Show Filters'),
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => setState(() => _showFilters = !_showFilters),
+                    borderRadius: BorderRadius.circular(14),
+                    child: Ink(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: isDark
+                              ? [const Color(0xFF1E293B), const Color(0xFF0F172A)]
+                              : [const Color(0xFFF0F9FF), const Color(0xFFEFF6FF)],
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: isDark ? const Color(0xFF3B82F6) : const Color(0xFF93C5FD)),
+                        boxShadow: isDark
+                            ? null
+                            : [
+                                BoxShadow(
+                                  color: const Color(0xFF2563EB).withValues(alpha: 0.08),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              _showFilters ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                              color: const Color(0xFF2563EB),
+                              size: 22,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              _showFilters ? 'Hide filters' : 'Show filters',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 15,
+                                color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E40AF),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
                 if (_showFilters) ...[
                   const SizedBox(height: 10),
@@ -524,67 +890,168 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                           ],
                         ),
                         const SizedBox(height: 10),
-                        const Text('Course', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                        Text('Course', style: _filterLabelStyle(isDark)),
                         const SizedBox(height: 6),
                         DropdownButtonFormField<String>(
                           value: _courseCode.isEmpty ? null : _courseCode,
-                          decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                          ),
+                          decoration: _filterFieldDecoration(isDark),
                           items: ReservationMockData.courses
                               .map((c) => DropdownMenuItem(value: c.code, child: Text(c.code)))
                               .toList(),
                           onChanged: (v) => setState(() => _courseCode = v ?? ''),
                         ),
                         const SizedBox(height: 12),
-                        const Text('Academic year (optional)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
-                        const SizedBox(height: 6),
-                        DropdownButtonFormField<String>(
-                          value: _selectedYear.isEmpty ? null : _selectedYear,
-                          decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-                          items: const [
-                            DropdownMenuItem(value: '', child: Text('No preference')),
-                            DropdownMenuItem(value: 'Freshman', child: Text('Freshman')),
-                            DropdownMenuItem(value: 'Sophomore', child: Text('Sophomore')),
-                            DropdownMenuItem(value: 'Junior', child: Text('Junior')),
-                            DropdownMenuItem(value: 'Senior', child: Text('Senior')),
-                          ],
-                          onChanged: (v) => setState(() => _selectedYear = v ?? ''),
-                        ),
-                        const SizedBox(height: 12),
-                        const Text('Study style (optional)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
-                        const SizedBox(height: 6),
-                        DropdownButtonFormField<String>(
-                          value: _selectedPreference.isEmpty ? null : _selectedPreference,
-                          decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-                          items: const [
-                            DropdownMenuItem(value: '', child: Text('No preference')),
-                            DropdownMenuItem(value: 'Silent study', child: Text('Silent study')),
-                            DropdownMenuItem(value: 'Discussion-based study', child: Text('Discussion-based')),
-                            DropdownMenuItem(value: 'Problem solving together', child: Text('Problem solving')),
-                          ],
-                          onChanged: (v) => setState(() => _selectedPreference = v ?? ''),
-                        ),
-                        const SizedBox(height: 12),
-                        const Text('Availability window', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                        Text('Time window (campus hours)', style: _filterLabelStyle(isDark)),
                         const SizedBox(height: 6),
                         DropdownButtonFormField<String>(
                           value: _slotId,
-                          decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                          ),
+                          decoration: _filterFieldDecoration(isDark),
                           items: ReservationMockData.timeSlots
-                              .map((s) => DropdownMenuItem(value: s.id, child: Text(s.id, style: const TextStyle(fontSize: 12))))
+                              .map((s) => DropdownMenuItem(
+                                    value: s.id,
+                                    child: Text(s.label, style: const TextStyle(fontSize: 14, height: 1.2)),
+                                  ))
                               .toList(),
                           onChanged: (v) => setState(() => _slotId = v ?? _slotId),
                         ),
                         const SizedBox(height: 12),
-                        const Text('Minimum AI match', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                        Text('Preferred day (typical, optional)', style: _filterLabelStyle(isDark)),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String>(
+                          value: _preferredWeekday.isEmpty ? null : _preferredWeekday,
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                          ),
+                          decoration: _filterFieldDecoration(isDark),
+                          items: const [
+                            DropdownMenuItem(value: '', child: Text('No preference')),
+                            DropdownMenuItem(value: 'Mon', child: Text('Mon')),
+                            DropdownMenuItem(value: 'Tue', child: Text('Tue')),
+                            DropdownMenuItem(value: 'Wed', child: Text('Wed')),
+                            DropdownMenuItem(value: 'Thu', child: Text('Thu')),
+                            DropdownMenuItem(value: 'Fri', child: Text('Fri')),
+                            DropdownMenuItem(value: 'Sat', child: Text('Sat')),
+                            DropdownMenuItem(value: 'Sun', child: Text('Sun')),
+                          ],
+                          onChanged: (v) => setState(() => _preferredWeekday = v ?? ''),
+                        ),
+                        const SizedBox(height: 12),
+                        Text('Minimum session length (buddy offers)', style: _filterLabelStyle(isDark)),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<int>(
+                          value: _minSessionMinutes,
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                          ),
+                          decoration: _filterFieldDecoration(isDark),
+                          items: const [
+                            DropdownMenuItem(value: 0, child: Text('No minimum', style: TextStyle(fontSize: 14, height: 1.2))),
+                            DropdownMenuItem(value: 60, child: Text('At least 1 hour', style: TextStyle(fontSize: 14, height: 1.2))),
+                            DropdownMenuItem(value: 120, child: Text('At least 2 hours', style: TextStyle(fontSize: 14, height: 1.2))),
+                            DropdownMenuItem(value: 180, child: Text('At least 3 hours', style: TextStyle(fontSize: 14, height: 1.2))),
+                          ],
+                          onChanged: (v) => setState(() => _minSessionMinutes = v ?? 0),
+                        ),
+                        const SizedBox(height: 12),
+                        Text('Academic year (optional)', style: _filterLabelStyle(isDark)),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String>(
+                          value: _selectedYear.isEmpty ? null : _selectedYear,
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                          ),
+                          decoration: _filterFieldDecoration(isDark),
+                          items: const [
+                            DropdownMenuItem(value: '', child: Text('No preference', style: TextStyle(fontSize: 14, height: 1.2))),
+                            DropdownMenuItem(value: 'Freshman', child: Text('Freshman', style: TextStyle(fontSize: 14, height: 1.2))),
+                            DropdownMenuItem(value: 'Sophomore', child: Text('Sophomore', style: TextStyle(fontSize: 14, height: 1.2))),
+                            DropdownMenuItem(value: 'Junior', child: Text('Junior', style: TextStyle(fontSize: 14, height: 1.2))),
+                            DropdownMenuItem(value: 'Senior', child: Text('Senior', style: TextStyle(fontSize: 14, height: 1.2))),
+                          ],
+                          onChanged: (v) => setState(() => _selectedYear = v ?? ''),
+                        ),
+                        const SizedBox(height: 12),
+                        Text('Study style (optional)', style: _filterLabelStyle(isDark)),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String>(
+                          value: _selectedPreference.isEmpty ? null : _selectedPreference,
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                          ),
+                          decoration: _filterFieldDecoration(isDark),
+                          items: const [
+                            DropdownMenuItem(value: '', child: Text('No preference', style: TextStyle(fontSize: 14, height: 1.2))),
+                            DropdownMenuItem(value: 'Silent study', child: Text('Silent study', style: TextStyle(fontSize: 14, height: 1.2))),
+                            DropdownMenuItem(
+                                value: 'Discussion-based study', child: Text('Discussion-based', style: TextStyle(fontSize: 14, height: 1.2))),
+                            DropdownMenuItem(
+                                value: 'Problem solving together', child: Text('Problem solving', style: TextStyle(fontSize: 14, height: 1.2))),
+                          ],
+                          onChanged: (v) => setState(() => _selectedPreference = v ?? ''),
+                        ),
+                        const SizedBox(height: 12),
+                        Text('Buddy gender (optional)', style: _filterLabelStyle(isDark)),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String>(
+                          value: _genderPreference.isEmpty ? null : _genderPreference,
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                          ),
+                          decoration: _filterFieldDecoration(isDark),
+                          items: const [
+                            DropdownMenuItem(value: '', child: Text('No preference', style: TextStyle(fontSize: 14, height: 1.2))),
+                            DropdownMenuItem(value: 'Woman', child: Text('Woman', style: TextStyle(fontSize: 14, height: 1.2))),
+                            DropdownMenuItem(value: 'Man', child: Text('Man', style: TextStyle(fontSize: 14, height: 1.2))),
+                            DropdownMenuItem(value: 'Non-binary', child: Text('Non-binary', style: TextStyle(fontSize: 14, height: 1.2))),
+                          ],
+                          onChanged: (v) => setState(() => _genderPreference = v ?? ''),
+                        ),
+                        const SizedBox(height: 12),
+                        Text('Study focus (optional)', style: _filterLabelStyle(isDark)),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String>(
+                          value: _focusFilter.isEmpty ? null : _focusFilter,
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                          ),
+                          decoration: _filterFieldDecoration(isDark),
+                          items: const [
+                            DropdownMenuItem(value: '', child: Text('No filter', style: TextStyle(fontSize: 14, height: 1.2))),
+                            DropdownMenuItem(value: 'Exam prep', child: Text('Exam prep', style: TextStyle(fontSize: 14, height: 1.2))),
+                            DropdownMenuItem(value: 'Project work', child: Text('Project work', style: TextStyle(fontSize: 14, height: 1.2))),
+                            DropdownMenuItem(value: 'Weekly reviews', child: Text('Weekly reviews', style: TextStyle(fontSize: 14, height: 1.2))),
+                          ],
+                          onChanged: (v) => setState(() => _focusFilter = v ?? ''),
+                        ),
+                        const SizedBox(height: 12),
+                        Text('Minimum AI match', style: _filterLabelStyle(isDark)),
                         const SizedBox(height: 6),
                         DropdownButtonFormField<int>(
                           value: _minMatchScore,
-                          decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                          ),
+                          decoration: _filterFieldDecoration(isDark),
                           items: const [
-                            DropdownMenuItem(value: 0, child: Text('Any score')),
-                            DropdownMenuItem(value: 70, child: Text('70% and above')),
-                            DropdownMenuItem(value: 80, child: Text('80% and above')),
-                            DropdownMenuItem(value: 90, child: Text('90% and above')),
+                            DropdownMenuItem(value: 0, child: Text('Any score', style: TextStyle(fontSize: 14, height: 1.2))),
+                            DropdownMenuItem(value: 70, child: Text('70% and above', style: TextStyle(fontSize: 14, height: 1.2))),
+                            DropdownMenuItem(value: 80, child: Text('80% and above', style: TextStyle(fontSize: 14, height: 1.2))),
+                            DropdownMenuItem(value: 90, child: Text('90% and above', style: TextStyle(fontSize: 14, height: 1.2))),
                           ],
                           onChanged: (v) => setState(() => _minMatchScore = v ?? 0),
                         ),
@@ -627,8 +1094,21 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(b.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
-                                    const Text('Study partner', style: TextStyle(fontSize: 11, color: Color(0xFF6B7280))),
+                                    Text(b.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                                    const Text('Study partner', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+                                    if (b.gender != null || b.academicYear != null || b.studyStyle != null) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        [
+                                          if (b.gender != null && b.gender!.isNotEmpty) b.gender,
+                                          if (b.academicYear != null && b.academicYear!.isNotEmpty) b.academicYear,
+                                          if (b.studyStyle != null && b.studyStyle!.isNotEmpty) b.studyStyle,
+                                        ].join(' · '),
+                                        style: const TextStyle(fontSize: 13, color: Color(0xFF4B5563), height: 1.3),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -637,7 +1117,7 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                                 decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(999)),
                                 child: Text(
                                   'AI ${b.matchScore}%',
-                                  style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF166534), fontSize: 11),
+                                  style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF166534), fontSize: 12),
                                 ),
                               ),
                             ],
@@ -646,7 +1126,8 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                           Text(
                             'AI score is based on course overlap, topic similarity, and study style fit.',
                             style: TextStyle(
-                              fontSize: 10,
+                              fontSize: 12,
+                              height: 1.35,
                               color: isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280),
                             ),
                           ),
@@ -657,8 +1138,9 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                             Text(
                               'Exam overlap: You both have $_upcomingExamCourse focus before ${_formatDate(_upcomingExamDate!)}.',
                               style: TextStyle(
-                                fontSize: 10,
+                                fontSize: 12,
                                 fontWeight: FontWeight.w700,
+                                height: 1.35,
                                 color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8),
                               ),
                             ),
@@ -667,16 +1149,29 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                           Text(
                             'Common courses: ${b.commonCourses.join(", ")}\n'
                             'Common topics: ${b.commonTopics.take(3).join(", ")}',
-                            style: const TextStyle(fontSize: 11, height: 1.35),
+                            style: const TextStyle(fontSize: 14, height: 1.4),
                           ),
+                          if (b.typicalWeekday != null ||
+                              b.sessionLengthOfferedMinutes != null ||
+                              (b.studyFocus != null && b.studyFocus!.isNotEmpty)) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              [
+                                if (b.typicalWeekday != null && b.typicalWeekday!.isNotEmpty) 'Often: ${b.typicalWeekday}',
+                                if (b.sessionLengthOfferedMinutes != null) '~${b.sessionLengthOfferedMinutes} min blocks',
+                                if (b.studyFocus != null && b.studyFocus!.isNotEmpty) b.studyFocus!,
+                              ].join(' · '),
+                              style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF), height: 1.35),
+                            ),
+                          ],
                           const SizedBox(height: 10),
                           Row(
                             children: [
                               Expanded(
                                 child: FilledButton.icon(
                                   onPressed: () => _toast('Request sent to ${b.name}.'),
-                                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
-                                  label: const Text('Connect'),
+                                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                                  label: const Text('Connect', style: TextStyle(fontSize: 15)),
                                   style: FilledButton.styleFrom(backgroundColor: const Color(0xFF9333EA)),
                                 ),
                               ),
@@ -684,8 +1179,8 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                               Expanded(
                                 child: OutlinedButton.icon(
                                   onPressed: () => _openReportDialog(b),
-                                  icon: const Icon(Icons.flag_outlined, size: 16),
-                                  label: const Text('Report'),
+                                  icon: const Icon(Icons.flag_outlined, size: 18),
+                                  label: const Text('Report', style: TextStyle(fontSize: 15)),
                                 ),
                               ),
                             ],

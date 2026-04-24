@@ -93,7 +93,7 @@ public class AuthService {
         u.setNickname(request.nickname());
         u.setDepartmentId(request.departmentId());
         u.setYear(request.year());
-        u.setResponsibilityScore(50);
+        u.setResponsibilityScore(100);
         userAccountRepository.save(u);
         final String deptName = referenceCatalogService
                 .resolveDepartmentName(u.getDepartmentId())

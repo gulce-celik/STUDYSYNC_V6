@@ -20,7 +20,7 @@ class AuthApi {
     required String email,
     required String password,
   }) async {
-    final response = await ApiClient.instance.dio.post<Map<String, dynamic>>(
+    final response = await ApiClient.instance.dio.post<Map<String, dynamic>>( // API call to login
       '/auth/login',
       data: {'email': email, 'password': password},
     );

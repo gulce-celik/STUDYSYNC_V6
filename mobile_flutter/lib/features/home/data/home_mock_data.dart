@@ -2,7 +2,8 @@
 class HomeMockData {
   HomeMockData._();
 
-  static const responsibilityScore = 92;
+  /// Demo baseline when API/dashboard is absent — mid-range trust, rights reduced via quotas only.
+  static const responsibilityScore = 75;
 
   static const List<HomeUpcomingReservation> upcomingReservations = [
     HomeUpcomingReservation(

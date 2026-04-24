@@ -104,7 +104,7 @@ export const currentUser: User = {
   email: 'ahmet.yilmaz@example.edu.tr',
   universityEmail: 'ahmet.yilmaz@ankara.edu.tr',
   nickname: 'ahmet_y',
-  responsibilityScore: 92,
+  responsibilityScore: 75, // demo: mid trust; app uses quotas not hard lockout
   reservationCount: 28,
   department: 'Computer Engineering',
   year: 3,

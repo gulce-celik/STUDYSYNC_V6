@@ -21,7 +21,7 @@ class RegistrationCourse {
 }
 
 abstract final class RegistrationMockData {
-  /// İskelet liste — ileride backend `GET /reference/departments` ile değiştirilecek.
+  /// İskelet liste  ileride backend `GET /reference/departments` ile değiştirilecek.
   static const departments = <RegistrationDepartment>[
     RegistrationDepartment(id: 'cse', name: 'Computer Engineering'),
     RegistrationDepartment(id: 'ie', name: 'Industrial Engineering'),
