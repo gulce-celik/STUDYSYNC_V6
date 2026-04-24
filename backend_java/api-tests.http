@@ -1,0 +1,103 @@
+### =============================================
+### SENARYO 1.1: Basarili Kullanici Kaydi (Register)
+### =============================================
+POST http://localhost:8080/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "ahmet@std.yeditepe.edu.tr",
+  "password": "SecurePassword123!",
+  "name": "Ahmet Yilmaz",
+  "nickname": "ahmet_yz",
+  "departmentId": "CS",
+  "year": 3,
+  "selectedCourseCodes": ["CS101"]
+}
+
+### =============================================
+### SENARYO 1.2: Basarili Giris (Login) ve JWT Alimi
+### =============================================
+POST http://localhost:8080/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "ahmet@std.yeditepe.edu.tr",
+  "password": "SecurePassword123!"
+}
+
+### =============================================
+### SENARYO 2.1: Basarili Rezervasyon
+### (Login'den donen accessToken'i asagiya yapistir)
+### =============================================
+POST http://localhost:8080/api/v1/reservations
+Content-Type: application/json
+Authorization: Bearer BURAYA_TOKEN_YAPISTIR
+
+{
+  "date": "2026-04-23",
+  "slotId": "09:00-11:00",
+  "workspaceId": "LIBRARY-FLOOR-2",
+  "courseCode": "CS101",
+  "reservationType": "INDIVIDUAL",
+  "allowStudyBuddy": false,
+  "participantNicknames": []
+}
+
+### =============================================
+### SENARYO 2.2: Saat Cakismasi (Ayni slot, ayni gun)
+### =============================================
+POST http://localhost:8080/api/v1/reservations
+Content-Type: application/json
+Authorization: Bearer BURAYA_TOKEN_YAPISTIR
+
+{
+  "date": "2026-04-23",
+  "slotId": "09:00-11:00",
+  "workspaceId": "LIBRARY-FLOOR-2",
+  "courseCode": "CS102",
+  "reservationType": "INDIVIDUAL",
+  "allowStudyBuddy": false,
+  "participantNicknames": []
+}
+
+### =============================================
+### SENARYO 2.3: Gunluk Limit Ihlali (3. rezervasyon)
+### =============================================
+POST http://localhost:8080/api/v1/reservations
+Content-Type: application/json
+Authorization: Bearer BURAYA_TOKEN_YAPISTIR
+
+{
+  "date": "2026-04-23",
+  "slotId": "15:00-17:00",
+  "workspaceId": "LIBRARY-FLOOR-3",
+  "courseCode": "CS103",
+  "reservationType": "INDIVIDUAL",
+  "allowStudyBuddy": false,
+  "participantNicknames": []
+}
+
+### =============================================
+### SENARYO 3.1: QR Check-in (Basarili)
+### (qrPayload degerini H2 konsolundan alacaksin)
+### =============================================
+POST http://localhost:8080/api/v1/checkin/verify
+Content-Type: application/json
+Authorization: Bearer BURAYA_TOKEN_YAPISTIR
+
+{
+  "reservationId": "1",
+  "qrPayload": "BURAYA_QR_PAYLOAD_YAPISTIR"
+}
+
+### =============================================
+### SENARYO 3.2: Rezervasyon Iptali (Erken iptal testi)
+### =============================================
+POST http://localhost:8080/api/v1/reservations/1/cancel
+Content-Type: application/json
+Authorization: Bearer BURAYA_TOKEN_YAPISTIR
+
+{
+  "cancelledAt": "2026-04-22T10:00:00",
+  "slotStartAt": "2026-04-23T09:00:00"
+}

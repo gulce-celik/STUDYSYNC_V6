@@ -1,0 +1,1317 @@
+import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
+
+import '../../../core/planner/ai_study_controller.dart';
+import '../data/reservation_api.dart';
+import '../data/reservation_mock_data.dart';
+import '../domain/reservation_models.dart';
+
+enum _DeskFilter { all, individual, group }
+
+const _kDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/// Reserve Space — aligned with Figma/React `ReservationMap.tsx` and analysis rules
+/// (Mon/Fri booking windows, instant desks, lost-item warning, scoring hints).
+class ReservationMapScreen extends StatefulWidget {
+  const ReservationMapScreen({super.key});
+
+  @override
+  State<ReservationMapScreen> createState() => _ReservationMapScreenState();
+}
+
+class _ReservationMapScreenState extends State<ReservationMapScreen> {
+  final _api = ReservationApi();
+  late DateTime _selectedDate;
+  String _selectedSlot = '';
+  String _selectedCourse = '';
+  String? _selectedWorkspaceId;
+  ReservationType _reservationType = ReservationType.individual;
+  bool _allowStudyBuddy = false;
+  _DeskFilter _filter = _DeskFilter.all;
+  bool _sheetExpanded = false;
+  final List<String> _groupNicknames = [];
+  final _nicknameCtrl = TextEditingController();
+
+  /// GET /reservations/workspaces doluysa harita sunucu koordinatlarını kullanır; yoksa mock ızgara.
+  List<Workspace>? _remoteWorkspaces;
+  bool _remoteLoading = false;
+  bool _submittingReservation = false;
+  bool _hideAiShortcut = false;
+
+  /// 0=Sun … 6=Sat (matches React `getDay()` semantics).
+  late int _simulatedDay;
+
+  @override
+  void initState() {
+    super.initState();
+    _simulatedDay = _dartWeekdayToSun0(DateTime.now().weekday);
+    _selectedDate = DateTime(2026, 3, 10);
+    AiStudyController.instance.addListener(_onAiControllerChanged);
+    _consumePendingAiPrefill();
+  }
+
+  @override
+  void dispose() {
+    AiStudyController.instance.removeListener(_onAiControllerChanged);
+    _nicknameCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onAiControllerChanged() {
+    _consumePendingAiPrefill();
+  }
+
+  void _consumePendingAiPrefill() {
+    final pending = AiStudyController.instance.consumePendingPrefill();
+    if (pending != null) {
+      _hideAiShortcut = true;
+      _applyAiPrefill(pending);
+    }
+  }
+
+  static int _dartWeekdayToSun0(int dartWeekday) {
+    if (dartWeekday == DateTime.sunday) return 0;
+    return dartWeekday;
+  }
+
+  bool get _isMonday => _simulatedDay == 1;
+  bool get _isFriday => _simulatedDay == 5;
+  bool get _canReserveAdvance => _isMonday || _isFriday;
+
+  String get _currentDayName => _kDayNames[_simulatedDay];
+
+  List<Workspace> get _layoutWorkspaces {
+    if (_remoteWorkspaces != null && _remoteWorkspaces!.isNotEmpty) {
+      return _remoteWorkspaces!;
+    }
+    return ReservationMockData.workspaces;
+  }
+
+  Workspace? _workspaceById(String? id) {
+    if (id == null) return null;
+    for (final w in _layoutWorkspaces) {
+      if (w.id == id) return w;
+    }
+    return null;
+  }
+
+  String? get _selectedSlotId {
+    for (final s in ReservationMockData.timeSlots) {
+      if (s.label == _selectedSlot) return s.id;
+    }
+    return null;
+  }
+
+  Future<void> _reloadWorkspacesFromServer() async {
+    final sid = _selectedSlotId;
+    if (sid == null || _selectedDateIso.isEmpty) return;
+    setState(() => _remoteLoading = true);
+    try {
+      final type = _reservationType == ReservationType.individual ? 'individual' : 'group';
+      final list = await ReservationApi().getWorkspaces(
+        date: _selectedDateIso,
+        slotId: sid,
+        type: type,
+      );
+      if (!mounted) return;
+      setState(() {
+        _remoteWorkspaces = list.isNotEmpty ? list : null;
+        _remoteLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _remoteWorkspaces = null;
+        _remoteLoading = false;
+      });
+    }
+  }
+
+  Iterable<Workspace> get _filteredWorkspaces {
+    final list = _layoutWorkspaces;
+    switch (_filter) {
+      case _DeskFilter.all:
+        return list;
+      case _DeskFilter.individual:
+        return list.where((w) => w.type == 'individual');
+      case _DeskFilter.group:
+        return list.where((w) => w.type == 'group');
+    }
+  }
+
+  bool _lostAt(String workspaceId) {
+    return ReservationMockData.lostItems.any((e) => e.workspaceId == workspaceId);
+  }
+
+  bool _isInstantDesk(String id) => ReservationMockData.instantDeskIds.contains(id);
+
+  /// Non–Mon/Fri: map highlights only cells that are instant id + actually free.
+  bool get _isInstantMapMode => !_canReserveAdvance;
+
+  bool _isInstantBookableCell(Workspace ws) {
+    if (!ReservationMockData.instantDeskIds.contains(ws.id)) return false;
+    if (_lostAt(ws.id)) return false;
+    if (_isBaseOccupied(ws)) return false;
+    if (_selectedDateIso.isNotEmpty && _selectedSlot.isNotEmpty) {
+      if (_dynamicOccupied(ws, _selectedDateIso, _selectedSlot)) return false;
+    }
+    return true;
+  }
+
+  bool _dynamicOccupied(Workspace ws, String dateIso, String slotLabel) {
+    if (dateIso.isEmpty || slotLabel.isEmpty) return false;
+    final dayNum = int.tryParse(dateIso.split('-').last) ?? 0;
+    final slotIdx = ReservationMockData.timeSlots.indexWhere((s) => s.label == slotLabel);
+    final deskNum = int.tryParse(ws.id.split('-').last) ?? 0;
+    final seed = (dayNum + slotIdx + deskNum) % 5;
+    return seed == 0 || seed == 1;
+  }
+
+  Color _fillForWorkspace(Workspace ws) {
+    if (_isInstantMapMode) {
+      if (_isInstantBookableCell(ws)) return const Color(0xFF60A5FA);
+      if (_lostAt(ws.id)) return const Color(0xFFFBBF24);
+      return const Color(0xFFDC2626);
+    }
+    if (_lostAt(ws.id)) return const Color(0xFFFBBF24);
+    if (ws.status == 'occupied') return const Color(0xFFF87171);
+    if (_selectedDateIso.isNotEmpty && _selectedSlot.isNotEmpty) {
+      if (_dynamicOccupied(ws, _selectedDateIso, _selectedSlot)) {
+        return const Color(0xFFF87171);
+      }
+    }
+    return const Color(0xFF60A5FA);
+  }
+
+  Color _strokeForWorkspace(Workspace ws) {
+    if (_isInstantMapMode) {
+      if (_isInstantBookableCell(ws)) return const Color(0xFF2563EB);
+      if (_lostAt(ws.id)) return const Color(0xFFD97706);
+      return const Color(0xFF7F1D1D);
+    }
+    if (_lostAt(ws.id)) return const Color(0xFFD97706);
+    if (ws.status == 'occupied') return const Color(0xFFDC2626);
+    if (_selectedDateIso.isNotEmpty && _selectedSlot.isNotEmpty) {
+      if (_dynamicOccupied(ws, _selectedDateIso, _selectedSlot)) {
+        return const Color(0xFFDC2626);
+      }
+    }
+    return const Color(0xFF2563EB);
+  }
+
+  double _opacityForWorkspace(Workspace ws) {
+    if (_canReserveAdvance) return 1;
+    if (_isInstantBookableCell(ws)) return 1;
+    if (_lostAt(ws.id)) return 0.45;
+    return 0.38;
+  }
+
+  bool _typeMismatch(Workspace ws) {
+    if (_reservationType == ReservationType.individual && ws.type == 'group') return true;
+    if (_reservationType == ReservationType.group && ws.type == 'individual') return true;
+    return false;
+  }
+
+  bool _isBaseOccupied(Workspace ws) => ws.status == 'occupied';
+
+  bool _isWorkspaceOccupied(String workspaceId) {
+    if (_isInstantDesk(workspaceId)) {
+      // Instant desks are explicit last-minute openings.
+      return false;
+    }
+    final ws = _workspaceById(workspaceId);
+    if (ws == null) return false;
+    if (_isBaseOccupied(ws)) return true;
+    if (_selectedDateIso.isNotEmpty && _selectedSlot.isNotEmpty) {
+      return _dynamicOccupied(ws, _selectedDateIso, _selectedSlot);
+    }
+    return false;
+  }
+
+  String get _selectedDateIso =>
+      '${_selectedDate.year.toString().padLeft(4, '0')}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
+
+  void _onWorkspaceTap(Workspace ws) {
+    if (_typeMismatch(ws)) return;
+    if (_isInstantMapMode) {
+      if (_lostAt(ws.id)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Lost item reported at this workspace')),
+        );
+        return;
+      }
+      if (!_isInstantBookableCell(ws)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Today only instant desks can be selected — pick a bright blue desk.')),
+        );
+        return;
+      }
+    } else {
+      if (_lostAt(ws.id)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Lost item reported at this workspace')),
+        );
+        return;
+      }
+    }
+    if (_isBaseOccupied(ws)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('This workspace is occupied')));
+      return;
+    }
+    if (_selectedDateIso.isNotEmpty && _selectedSlot.isNotEmpty && _dynamicOccupied(ws, _selectedDateIso, _selectedSlot)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('This workspace is occupied')));
+      return;
+    }
+
+    setState(() {
+      _selectedWorkspaceId = ws.id;
+      if (_isInstantDesk(ws.id)) {
+        _selectedDate = DateTime.now();
+        if (ws.id == 'desk-2') {
+          _selectedSlot = '09:00 - 11:00 (Class Time)';
+        } else if (ws.id == 'desk-15') {
+          _selectedSlot = '13:00 - 15:00 (Class Time)';
+        }
+      }
+    });
+    _reloadWorkspacesFromServer();
+  }
+
+  void _addNickname() {
+    final ws = _workspaceById(_selectedWorkspaceId);
+    if (ws == null) return;
+    final nick = _nicknameCtrl.text.trim();
+    if (nick.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter nickname')));
+      return;
+    }
+    if (_groupNicknames.contains(nick)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nickname already added')));
+      return;
+    }
+    if (_groupNicknames.length >= ws.capacity - 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Max ${ws.capacity - 1} members')),
+      );
+      return;
+    }
+    setState(() {
+      _groupNicknames.add(nick);
+      _nicknameCtrl.clear();
+    });
+  }
+
+  Future<void> _confirmReservation() async {
+    if (ReservationMockData.mockResponsibilityScore < 70) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Responsibility score too low (need 70+)')),
+      );
+      return;
+    }
+    if (_selectedWorkspaceId == null || _selectedSlot.isEmpty || _selectedCourse.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Fill all fields')));
+      return;
+    }
+
+    final instant = _isInstantDesk(_selectedWorkspaceId!);
+    if (!_canReserveAdvance && !instant) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Advance booking only on Mon & Fri — or pick an instant slot')),
+      );
+      return;
+    }
+
+    final ws = _workspaceById(_selectedWorkspaceId);
+    if (_reservationType == ReservationType.group && ws != null) {
+      if (_groupNicknames.length != ws.capacity - 1) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Add ${ws.capacity - 1} group member nicknames')),
+        );
+        return;
+      }
+    }
+
+    final slotId = _selectedSlotId;
+    if (slotId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Select a valid slot')));
+      return;
+    }
+
+    setState(() => _submittingReservation = true);
+    try {
+      final created = await _api.createReservation(
+        date: _selectedDateIso,
+        slotId: slotId,
+        workspaceId: _selectedWorkspaceId!,
+        courseCode: _selectedCourse,
+        reservationType: _reservationType == ReservationType.group ? 'GROUP' : 'INDIVIDUAL',
+        allowStudyBuddy: _allowStudyBuddy,
+        participantNicknames: List<String>.from(_groupNicknames),
+      );
+      if (!mounted) return;
+      final msg = instant
+          ? 'Instant reservation confirmed (${created.id})'
+          : (_reservationType == ReservationType.group ? 'Invites sent (${created.id})' : 'Reservation confirmed (${created.id})');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      setState(() {
+        _selectedWorkspaceId = null;
+        _selectedSlot = '';
+        _selectedCourse = '';
+        _groupNicknames.clear();
+        _sheetExpanded = false;
+      });
+      await _reloadWorkspacesFromServer();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      final status = e.response?.statusCode;
+      final backendMessage = _extractBackendMessage(e.response?.data);
+      if (status == 401 || status == 403) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Session expired. Please sign in again.')));
+      } else if (status == 400 || status == 409) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(backendMessage ?? 'This slot is no longer available.')),
+        );
+      } else if (status == 500 && backendMessage != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(backendMessage)));
+      } else if (status == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cannot reach backend.')));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Reservation failed (HTTP $status)')));
+      }
+    } finally {
+      if (mounted) setState(() => _submittingReservation = false);
+    }
+  }
+
+  String? _extractBackendMessage(dynamic data) {
+    if (data == null) return null;
+    if (data is Map && data['message'] != null) {
+      final m = data['message'].toString().trim();
+      return m.isEmpty ? null : m;
+    }
+    if (data is String) {
+      final m = data.trim();
+      return m.isEmpty ? null : m;
+    }
+    return null;
+  }
+
+  bool get _instantLocked =>
+      _selectedWorkspaceId != null && _isInstantDesk(_selectedWorkspaceId!);
+
+  bool get _showConfirmButton =>
+      _canReserveAdvance || (_selectedWorkspaceId != null && _isInstantDesk(_selectedWorkspaceId!));
+
+  void _applyAiPrefill(ReservePrefill p) {
+    final d = DateTime.tryParse(p.dateIso);
+    if (d == null) return;
+    final sun0 = _dartWeekdayToSun0(d.weekday);
+    setState(() {
+      _selectedDate = d;
+      _simulatedDay = sun0;
+      _selectedSlot = p.slotLabel;
+      _selectedCourse = p.courseCode;
+      _sheetExpanded = true;
+    });
+    _reloadWorkspacesFromServer();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF0B1220) : Colors.white,
+      body: Column(
+        children: [
+          _buildHeader(context),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildFilterRow(),
+                  const SizedBox(height: 6),
+                  _buildLegend(),
+                  const SizedBox(height: 8),
+                  if (_remoteLoading) const LinearProgressIndicator(minHeight: 2),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6, top: 2),
+                    child: Text(
+                      _remoteWorkspaces != null && _remoteWorkspaces!.isNotEmpty
+                          ? 'Map: server layout (GET /reservations/workspaces)'
+                          : 'Map: local mock — backend boş veya çevrimdışı',
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+                  _buildMap(),
+                  const SizedBox(height: 10),
+                  _buildInfoBanner(),
+                  const SizedBox(height: 10),
+                  _buildAiSuggestionShortcut(),
+                ],
+              ),
+            ),
+          ),
+          _buildBottomSheet(context),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      color: isDark ? const Color(0xFF111827) : Colors.white,
+      elevation: 0,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(12, MediaQuery.paddingOf(context).top + 6, 12, 8),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
+        ),
+        child: Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Reserve Space',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF111827)),
+              ),
+            ),
+            _DayMenu(
+              currentLabel: _currentDayName,
+              selectedIndex: _simulatedDay,
+              onSelect: (i) {
+                setState(() => _simulatedDay = i);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Demo day: ${_kDayNames[i]}')),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterRow() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Row(
+      children: [
+        Text(
+          'Study Area',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            color: isDark ? const Color(0xFFE5E7EB) : const Color(0xFF111827),
+          ),
+        ),
+        const Spacer(),
+        _tinyFilterChip('All', _filter == _DeskFilter.all, () => setState(() => _filter = _DeskFilter.all)),
+        const SizedBox(width: 4),
+        _tinyFilterIcon(_filter == _DeskFilter.individual, Icons.person_outline_rounded, () => setState(() => _filter = _DeskFilter.individual)),
+        const SizedBox(width: 4),
+        _tinyFilterIcon(_filter == _DeskFilter.group, Icons.groups_2_outlined, () => setState(() => _filter = _DeskFilter.group)),
+      ],
+    );
+  }
+
+  Widget _tinyFilterChip(String label, bool selected, VoidCallback onTap) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: selected
+              ? const Color(0xFF111827)
+              : (isDark ? const Color(0xFF1F2937) : const Color(0xFFF3F4F6)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+            color: selected ? Colors.white : const Color(0xFF6B7280),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tinyFilterIcon(bool selected, IconData icon, VoidCallback onTap) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: selected
+              ? const Color(0xFF111827)
+              : (isDark ? const Color(0xFF1F2937) : const Color(0xFFF3F4F6)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon, size: 12, color: selected ? Colors.white : const Color(0xFF6B7280)),
+      ),
+    );
+  }
+
+  Widget _buildLegend() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    Widget dot(Color fill, Color border) {
+      return Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(
+          color: fill,
+          borderRadius: BorderRadius.circular(2),
+          border: Border.all(color: border),
+        ),
+      );
+    }
+
+    if (_isInstantMapMode) {
+      return Row(
+        children: [
+          dot(const Color(0xFF60A5FA), const Color(0xFF2563EB)),
+          const SizedBox(width: 4),
+          Text('Open now', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade700)),
+          const SizedBox(width: 10),
+          dot(
+            const Color(0xFFDC2626).withValues(alpha: 0.45),
+            const Color(0xFF7F1D1D).withValues(alpha: 0.5),
+          ),
+          const SizedBox(width: 4),
+          Text('Not open', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade700)),
+          const SizedBox(width: 10),
+          dot(
+            const Color(0xFFFBBF24).withValues(alpha: 0.45),
+            const Color(0xFFD97706).withValues(alpha: 0.5),
+          ),
+          const SizedBox(width: 4),
+          Text('Lost', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade700)),
+        ],
+      );
+    }
+    return Row(
+      children: [
+        dot(const Color(0xFF60A5FA), const Color(0xFF2563EB)),
+        const SizedBox(width: 4),
+        Text('Free', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade700)),
+        const SizedBox(width: 10),
+        dot(const Color(0xFFF87171), const Color(0xFFDC2626)),
+        const SizedBox(width: 4),
+        Text('Busy', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade700)),
+        const SizedBox(width: 10),
+        dot(const Color(0xFFFBBF24), const Color(0xFFD97706)),
+        const SizedBox(width: 4),
+        Text('Lost', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade700)),
+      ],
+    );
+  }
+
+  Widget _buildMap() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxW = constraints.maxWidth;
+        final h = maxW * (ReservationMockData.mapHeight / ReservationMockData.mapWidth);
+        final sx = maxW / ReservationMockData.mapWidth;
+        final sy = h / ReservationMockData.mapHeight;
+
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            width: maxW,
+            height: h,
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1F2937) : const Color(0xFFF9FAFB),
+              border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE5E7EB)),
+            ),
+            child: Stack(
+              children: [
+                Positioned(
+                  top: 6,
+                  left: 0,
+                  right: 0,
+                  child: Text(
+                    'Individual Desks',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? const Color(0xFFD1D5DB) : Colors.grey.shade600,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 220 * sy,
+                  left: 0,
+                  right: 0,
+                  child: Text(
+                    'Group Rooms',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? const Color(0xFFD1D5DB) : Colors.grey.shade600,
+                    ),
+                  ),
+                ),
+                ..._filteredWorkspaces.map((ws) {
+                  final w = (ws.type == 'individual' ? 35 : 70) * sx;
+                  final hi = (ws.type == 'individual' ? 50 : 100) * sy;
+                  final blocked = _isInstantMapMode
+                      ? (_typeMismatch(ws) || (!_isInstantBookableCell(ws) && !_lostAt(ws.id)))
+                      : (_typeMismatch(ws) || _isBaseOccupied(ws));
+                  final selected = _selectedWorkspaceId == ws.id;
+                  final op = _opacityForWorkspace(ws);
+
+                  return Positioned(
+                    left: ws.x * sx,
+                    top: ws.y * sy,
+                    width: w,
+                    height: hi,
+                    child: Opacity(
+                      opacity: op,
+                      child: GestureDetector(
+                        onTap: blocked ? null : () => _onWorkspaceTap(ws),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 120),
+                          decoration: BoxDecoration(
+                            color: _fillForWorkspace(ws),
+                            borderRadius: BorderRadius.circular(ws.type == 'individual' ? 3 : 6),
+                            border: Border.all(
+                              color: _strokeForWorkspace(ws),
+                              width: selected ? 3 : 2,
+                            ),
+                          ),
+                          child: Center(
+                            child: ws.type == 'individual'
+                                ? Text(
+                                    ws.id.split('-').last,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 11,
+                                    ),
+                                  )
+                                : Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        ws.id,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 10,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Cap: ${ws.capacity}',
+                                        style: const TextStyle(color: Colors.white, fontSize: 9),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildInfoBanner() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isDark
+              ? const [Color(0xFF1F2937), Color(0xFF111827)]
+              : const [Color(0xFFEFF6FF), Color(0xFFF5F3FF)],
+        ),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFBFDBFE)),
+      ),
+      child: Column(
+        children: [
+          Text.rich(
+            TextSpan(
+              style: TextStyle(
+                fontSize: 10,
+                height: 1.35,
+                color: isDark ? const Color(0xFFD1D5DB) : Colors.grey.shade800,
+              ),
+              children: _isInstantMapMode
+                  ? const [
+                      TextSpan(text: 'Bright blue', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF1D4ED8))),
+                      TextSpan(text: ' = open for instant today · '),
+                      TextSpan(text: 'Faded red', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF991B1B))),
+                      TextSpan(text: ' = not available · '),
+                      TextSpan(text: 'Faded yellow', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFFD97706))),
+                      TextSpan(text: ' = lost item'),
+                    ]
+                  : const [
+                      TextSpan(text: 'Bright', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF1D4ED8))),
+                      TextSpan(text: ' = Available · '),
+                      TextSpan(text: 'Red', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFFDC2626))),
+                      TextSpan(text: ' = Occupied · '),
+                      TextSpan(text: 'Yellow', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFFD97706))),
+                      TextSpan(text: ' = Lost item'),
+                    ],
+            ),
+            textAlign: TextAlign.center,
+          ),
+          Divider(height: 16, color: isDark ? const Color(0xFF334155) : const Color(0xFFBFDBFE)),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              _isInstantMapMode
+                  ? 'Tap a bright blue desk only. Date & time auto-fill, then confirm.'
+                  : 'How to reserve: 1) Date  2) Time  3) Tap a workspace on the map. Red = occupied.',
+              style: TextStyle(
+                fontSize: 9,
+                height: 1.4,
+                color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomSheet(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      elevation: 8,
+      color: isDark ? const Color(0xFF111827) : Colors.white,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _sheetExpanded = !_sheetExpanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.calendar_month_rounded, color: Color(0xFF2563EB)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _selectedWorkspaceId != null ? '$_selectedWorkspaceId selected' : 'Select workspace',
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                    ),
+                  ),
+                  Icon(_sheetExpanded ? Icons.expand_less : Icons.expand_more),
+                ],
+              ),
+            ),
+          ),
+          if (_sheetExpanded)
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.55),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _policyBanner(),
+                    if (!_canReserveAdvance) _instantPolicyBanner(),
+                    const SizedBox(height: 12),
+                    Text('Type', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.grey.shade800)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _typeButton(
+                            label: 'Individual',
+                            icon: Icons.person_outline_rounded,
+                            selected: _reservationType == ReservationType.individual,
+                            onTap: () {
+                              setState(() => _reservationType = ReservationType.individual);
+                              _reloadWorkspacesFromServer();
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _typeButton(
+                            label: 'Group',
+                            icon: Icons.groups_2_outlined,
+                            selected: _reservationType == ReservationType.group,
+                            onTap: () {
+                              setState(() => _reservationType = ReservationType.group);
+                              _reloadWorkspacesFromServer();
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Text('Date', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.grey.shade800)),
+                    const SizedBox(height: 6),
+                    InkWell(
+                      onTap: _instantLocked
+                          ? null
+                          : () async {
+                              final d = await showDatePicker(
+                                context: context,
+                                initialDate: _selectedDate,
+                                firstDate: DateTime(2026, 1, 1),
+                                lastDate: DateTime(2027, 12, 31),
+                              );
+                              if (d != null) {
+                                setState(() => _selectedDate = d);
+                                _reloadWorkspacesFromServer();
+                              }
+                            },
+                      child: InputDecorator(
+                        decoration: InputDecoration(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          fillColor: _instantLocked ? const Color(0xFFF3F4F6) : Colors.white,
+                          filled: _instantLocked,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(_selectedDateIso, style: TextStyle(fontSize: 12, color: _instantLocked ? Colors.grey : Colors.black87)),
+                            Icon(Icons.calendar_today_outlined, size: 16, color: _instantLocked ? Colors.grey : const Color(0xFF2563EB)),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (_instantLocked)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'Auto-filled for instant booking',
+                          style: TextStyle(fontSize: 9, color: Colors.blue.shade700, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    const SizedBox(height: 14),
+                    Text('Time slot', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.grey.shade800)),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String>(
+                      key: ValueKey<String>('slot_${_selectedSlot}_$_instantLocked'),
+                      initialValue: _selectedSlot.isEmpty ? null : _selectedSlot,
+                      isExpanded: true,
+                      hint: const Text('Select time slot', style: TextStyle(fontSize: 12)),
+                      items: ReservationMockData.timeSlots
+                          .map(
+                            (s) => DropdownMenuItem(
+                              value: s.label,
+                              child: Text(s.label, style: const TextStyle(fontSize: 12)),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _instantLocked
+                          ? null
+                          : (v) {
+                              setState(() => _selectedSlot = v ?? '');
+                              _reloadWorkspacesFromServer();
+                            },
+                      decoration: InputDecoration(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        fillColor: _instantLocked ? const Color(0xFFF3F4F6) : Colors.white,
+                        filled: _instantLocked,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text('Course', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.grey.shade800)),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String>(
+                      key: ValueKey<String>('course_$_selectedCourse'),
+                      initialValue: _selectedCourse.isEmpty ? null : _selectedCourse,
+                      isExpanded: true,
+                      hint: const Text('Select course', style: TextStyle(fontSize: 12)),
+                      items: ReservationMockData.courses
+                          .map(
+                            (c) => DropdownMenuItem(
+                              value: c.code,
+                              child: Text('${c.code} — ${c.name}', style: const TextStyle(fontSize: 12)),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) => setState(() => _selectedCourse = v ?? ''),
+                      decoration: InputDecoration(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                    if (_reservationType == ReservationType.group && _selectedWorkspaceId != null) ...[
+                      const SizedBox(height: 14),
+                      _groupPanel(),
+                    ],
+                    if (_reservationType == ReservationType.individual) ...[
+                      const SizedBox(height: 10),
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        value: _allowStudyBuddy,
+                        onChanged: (v) => setState(() => _allowStudyBuddy = v ?? false),
+                        title: const Text('Allow study buddy matching', style: TextStyle(fontSize: 12)),
+                        controlAffinity: ListTileControlAffinity.leading,
+                        fillColor: WidgetStateProperty.resolveWith((s) {
+                          if (s.contains(WidgetState.selected)) return const Color(0xFF9333EA);
+                          return null;
+                        }),
+                      ),
+                    ],
+                    if (_showConfirmButton) ...[
+                      const SizedBox(height: 8),
+                      FilledButton(
+                        onPressed: (!_submittingReservation &&
+                                _selectedWorkspaceId != null &&
+                                _selectedSlot.isNotEmpty &&
+                                _selectedCourse.isNotEmpty &&
+                                !_isWorkspaceOccupied(_selectedWorkspaceId!))
+                            ? _confirmReservation
+                            : null,
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          backgroundColor: const Color(0xFF2563EB),
+                        ),
+                        child: _submittingReservation
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : Text(
+                                _instantLocked ? 'Instant reserve' : 'Confirm reservation',
+                                style: const TextStyle(fontWeight: FontWeight.w800),
+                              ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAiSuggestionShortcut() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return ListenableBuilder(
+      listenable: AiStudyController.instance,
+      builder: (context, _) {
+        if (_hideAiShortcut) return const SizedBox.shrink();
+        final list = AiStudyController.instance.suggestions;
+        if (list.isEmpty) return const SizedBox.shrink();
+        final s = list.first;
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: isDark
+                  ? const [Color(0xFF111827), Color(0xFF1E1B4B)]
+                  : const [Color(0xFFEEF2FF), Color(0xFFF5F3FF)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFC7D2FE)),
+            boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 8, offset: Offset(0, 3))],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      gradient: const LinearGradient(colors: [Color(0xFF2563EB), Color(0xFF7C3AED)]),
+                    ),
+                    child: const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 18),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'AI Suggestions',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: isDark ? const Color(0xFFE5E7EB) : const Color(0xFF1E1B4B),
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1D4ED8) : const Color(0xFFDBEAFE),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '2h plan',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : const Color(0xFF1E40AF),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                s.message,
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1.35,
+                  color: isDark ? const Color(0xFFD1D5DB) : const Color(0xFF374151),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () {
+                        AiStudyController.instance.acceptSuggestion(s);
+                      },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF2563EB),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('Accept'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => AiStudyController.instance.rejectSuggestion(s.id),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('Reject'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _policyBanner() {
+    String title;
+    if (_isMonday) {
+      title = 'Monday: reserve Tue–Fri';
+    } else if (_isFriday) {
+      title = 'Friday: reserve Sat–Mon';
+    } else {
+      title = '$_currentDayName: instant booking only';
+    }
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline_rounded, size: 18, color: Color(0xFF2563EB)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$title\nCancel ≥24h early: +3 · No-show: -10',
+              style: const TextStyle(fontSize: 11, height: 1.35, color: Color(0xFF1E3A8A)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _instantPolicyBanner() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFBEB),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFFCD34D)),
+        ),
+        child: const Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFD97706)),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Mon opens Tue–Fri · Fri opens Sat–Mon · Bright desks may be cancelled slots',
+                style: TextStyle(fontSize: 10, height: 1.35, color: Color(0xFF92400E)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _typeButton({
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFEFF6FF) : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: selected ? const Color(0xFF2563EB) : const Color(0xFFE5E7EB), width: 2),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 18, color: selected ? const Color(0xFF2563EB) : const Color(0xFF6B7280)),
+            const SizedBox(width: 6),
+            Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: selected ? const Color(0xFF2563EB) : const Color(0xFF6B7280))),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _groupPanel() {
+    final ws = _workspaceById(_selectedWorkspaceId);
+    if (ws == null) return const SizedBox.shrink();
+    final need = ws.capacity - 1;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAF5FF),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE9D5FF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Group members ($_groupNicknames.length / $need)',
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF581C87)),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _nicknameCtrl,
+                  decoration: InputDecoration(
+                    hintText: 'Nickname',
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  style: const TextStyle(fontSize: 12),
+                  onSubmitted: (_) => _addNickname(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: _addNickname,
+                style: FilledButton.styleFrom(backgroundColor: const Color(0xFF9333EA)),
+                child: const Text('Add'),
+              ),
+            ],
+          ),
+          ..._groupNicknames.map(
+            (n) => Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                children: [
+                  Expanded(child: Text(n, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
+                  TextButton(
+                    onPressed: () => setState(() => _groupNicknames.remove(n)),
+                    child: const Text('Remove', style: TextStyle(fontSize: 11)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Members must accept within 10 minutes',
+            style: TextStyle(fontSize: 9, color: Colors.purple.shade800),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DayMenu extends StatelessWidget {
+  const _DayMenu({
+    required this.currentLabel,
+    required this.selectedIndex,
+    required this.onSelect,
+  });
+
+  final String currentLabel;
+  final int selectedIndex;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<int>(
+      offset: const Offset(0, 36),
+      onSelected: onSelect,
+      itemBuilder: (context) => List.generate(
+        7,
+        (i) => PopupMenuItem(
+          value: i,
+          child: Text(
+            _kDayNames[i],
+            style: TextStyle(
+              fontWeight: i == selectedIndex ? FontWeight.w800 : FontWeight.w500,
+              color: i == selectedIndex ? const Color(0xFF2563EB) : null,
+            ),
+          ),
+        ),
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFFDBEAFE),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              currentLabel,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF1D4ED8)),
+            ),
+            const SizedBox(width: 2),
+            const Icon(Icons.expand_more_rounded, size: 14, color: Color(0xFF1D4ED8)),
+          ],
+        ),
+      ),
+    );
+  }
+}

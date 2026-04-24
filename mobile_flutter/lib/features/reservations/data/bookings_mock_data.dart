@@ -1,0 +1,87 @@
+import '../../reservation/domain/reservation_models.dart';
+
+/// `src/app/data/mockData.ts` `mockReservations` — backend boşken My Bookings fallback.
+class BookingsMockData {
+  BookingsMockData._();
+
+  static List<ReservationDetail> sampleBookings() => [
+        const ReservationDetail(
+          id: 'res-1',
+          workspaceId: 'desk-5',
+          date: '2026-03-10',
+          slotId: 'slot-2',
+          slotLabel: '10:00 - 12:00',
+          status: 'ACTIVE',
+          courseCode: 'CSE344',
+          participants: [],
+          checkedIn: true,
+          qrPayload: 'RES-CSE344-20260310-1000',
+        ),
+        const ReservationDetail(
+          id: 'res-2',
+          workspaceId: 'desk-12',
+          date: '2026-03-11',
+          slotId: 'slot-4',
+          slotLabel: '14:00 - 16:00',
+          status: 'PENDING',
+          courseCode: 'MATH301',
+          participants: [],
+          checkedIn: false,
+        ),
+        const ReservationDetail(
+          id: 'res-3',
+          workspaceId: 'group-1',
+          date: '2026-03-12',
+          slotId: 'slot-6',
+          slotLabel: '18:00 - 20:00',
+          status: 'PENDING',
+          courseCode: 'CSE344',
+          participants: ['user-1', 'user-2', 'user-3'],
+          checkedIn: false,
+        ),
+        const ReservationDetail(
+          id: 'res-past-1',
+          workspaceId: 'desk-3',
+          date: '2026-02-01',
+          slotId: 'slot-2',
+          slotLabel: '09:00 - 11:00',
+          status: 'COMPLETED',
+          courseCode: 'CSE331',
+          participants: [],
+          checkedIn: true,
+        ),
+        const ReservationDetail(
+          id: 'res-past-2',
+          workspaceId: 'desk-9',
+          date: '2026-01-27',
+          slotId: 'slot-3',
+          slotLabel: '11:00 - 13:00',
+          status: 'COMPLETED',
+          courseCode: 'MATH281',
+          participants: [],
+          checkedIn: true,
+        ),
+        const ReservationDetail(
+          id: 'res-past-3',
+          workspaceId: 'group-2',
+          date: '2026-01-19',
+          slotId: 'slot-5',
+          slotLabel: '15:00 - 17:00',
+          status: 'NO_SHOW',
+          courseCode: 'CSE354',
+          participants: ['user-1', 'user-2'],
+          checkedIn: false,
+        ),
+        const ReservationDetail(
+          id: 'res-past-4',
+          workspaceId: 'desk-1',
+          date: '2026-01-10',
+          slotId: 'slot-1',
+          slotLabel: '09:00 - 11:00',
+          status: 'CANCELLED',
+          courseCode: 'CSE211',
+          participants: [],
+          checkedIn: false,
+        ),
+      ];
+}

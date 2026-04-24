@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>StudySync Backend Sağlık Raporu</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: #f8f9fc;
+    color: #1a1a2e;
+    line-height: 1.7;
+    padding: 0;
+  }
+
+  .page {
+    max-width: 850px;
+    margin: 0 auto;
+    background: #fff;
+    padding: 50px 60px;
+  }
+
+  /* Header */
+  .header {
+    text-align: center;
+    padding-bottom: 30px;
+    border-bottom: 3px solid #4f46e5;
+    margin-bottom: 35px;
+  }
+  .header h1 {
+    font-size: 28px;
+    font-weight: 800;
+    color: #4f46e5;
+    margin-bottom: 5px;
+  }
+  .header .subtitle {
+    font-size: 14px;
+    color: #64748b;
+    font-weight: 500;
+  }
+  .meta-row {
+    display: flex;
+    justify-content: center;
+    gap: 30px;
+    margin-top: 15px;
+    font-size: 13px;
+    color: #475569;
+  }
+  .meta-row span { background: #f1f5f9; padding: 4px 12px; border-radius: 6px; }
+
+  /* Section titles */
+  h2 {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 35px 0 18px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  h2 .icon { font-size: 22px; }
+
+  h3 {
+    font-size: 15px;
+    font-weight: 700;
+    color: #334155;
+    margin: 18px 0 8px 0;
+  }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 20px 0;
+    font-size: 13px;
+  }
+  thead th {
+    background: #4f46e5;
+    color: #fff;
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  thead th:first-child { border-radius: 8px 0 0 0; }
+  thead th:last-child { border-radius: 0 8px 0 0; }
+  tbody td {
+    padding: 9px 14px;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  tbody tr:nth-child(even) { background: #fafbff; }
+  tbody tr:hover { background: #f0f0ff; }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .badge-success { background: #dcfce7; color: #166534; }
+  .badge-warning { background: #fef9c3; color: #854d0e; }
+  .badge-error { background: #fee2e2; color: #991b1b; }
+
+  /* Cards */
+  .card {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin: 12px 0;
+    background: #fff;
+  }
+  .card-red { border-left: 4px solid #ef4444; background: #fef2f2; }
+  .card-yellow { border-left: 4px solid #f59e0b; background: #fffbeb; }
+  .card-green { border-left: 4px solid #22c55e; background: #f0fdf4; }
+
+  .card-title {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .card p {
+    font-size: 13px;
+    color: #475569;
+    margin: 4px 0;
+  }
+  .card strong { color: #1e293b; }
+
+  /* Stats bar */
+  .stats-bar {
+    display: flex;
+    gap: 15px;
+    margin: 20px 0;
+  }
+  .stat-box {
+    flex: 1;
+    text-align: center;
+    padding: 18px 10px;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+  }
+  .stat-box .number { font-size: 32px; font-weight: 800; }
+  .stat-box .label { font-size: 12px; color: #64748b; font-weight: 500; margin-top: 4px; }
+  .stat-green { background: linear-gradient(135deg, #f0fdf4, #dcfce7); }
+  .stat-green .number { color: #16a34a; }
+  .stat-yellow { background: linear-gradient(135deg, #fffbeb, #fef3c7); }
+  .stat-yellow .number { color: #d97706; }
+  .stat-red { background: linear-gradient(135deg, #fef2f2, #fee2e2); }
+  .stat-red .number { color: #dc2626; }
+
+  /* DB section */
+  .db-section {
+    background: #f8fafc;
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin: 15px 0;
+    border: 1px solid #e2e8f0;
+  }
+  .db-section h4 {
+    font-size: 13px;
+    font-weight: 700;
+    color: #475569;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* Code */
+  .code-block {
+    background: #1e293b;
+    color: #e2e8f0;
+    padding: 14px 18px;
+    border-radius: 8px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12.5px;
+    margin: 10px 0;
+    line-height: 1.8;
+    overflow-x: auto;
+  }
+  .code-block .comment { color: #94a3b8; }
+  .code-block .key { color: #7dd3fc; }
+  .code-block .val { color: #a5f3a3; }
+
+  /* List items */
+  ul { padding-left: 22px; margin: 8px 0; }
+  li { font-size: 13px; margin: 5px 0; color: #475569; }
+  li strong { color: #1e293b; }
+
+  /* Note box */
+  .note-box {
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 15px 0;
+    font-size: 13px;
+    color: #3730a3;
+  }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    padding-top: 30px;
+    margin-top: 40px;
+    border-top: 2px solid #e2e8f0;
+    font-size: 12px;
+    color: #94a3b8;
+  }
+
+  /* Print styles */
+  @media print {
+    body { background: #fff; }
+    .page { padding: 30px 40px; box-shadow: none; }
+    .card:hover, tbody tr:hover { background: inherit; }
+    @page { margin: 15mm; size: A4; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- HEADER -->
+  <div class="header">
+    <h1>🏥 StudySync Backend Sağlık Raporu</h1>
+    <div class="subtitle">Kapsamlı API Test Sonuçları ve Değerlendirme</div>
+    <div class="meta-row">
+      <span>📅 22 Nisan 2026</span>
+      <span>🧪 QA Mühendisi: Claude Opus</span>
+      <span>🗄️ Ortam: H2 In-Memory DB</span>
+    </div>
+  </div>
+
+  <!-- STATS -->
+  <div class="stats-bar">
+    <div class="stat-box stat-green">
+      <div class="number">6</div>
+      <div class="label">Başarılı Test</div>
+    </div>
+    <div class="stat-box stat-yellow">
+      <div class="number">2</div>
+      <div class="label">Kısmi Başarılı</div>
+    </div>
+    <div class="stat-box stat-red">
+      <div class="number">5</div>
+      <div class="label">Bulunan Bug</div>
+    </div>
+  </div>
+
+  <!-- TEST SONUÇLARI -->
+  <h2><span class="icon">📊</span> Test Sonuç Tablosu</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Senaryo</th>
+        <th>Ne Test Edildi?</th>
+        <th>Sonuç</th>
+        <th>Detay</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>1.1</strong> Kayıt</td>
+        <td>Yeni kullanıcı oluşturma</td>
+        <td><span class="badge badge-success">✅ Başarılı</span></td>
+        <td>200 OK — Token + kullanıcı bilgisi döndü</td>
+      </tr>
+      <tr>
+        <td><strong>1.2</strong> Giriş</td>
+        <td>Email/şifre ile login</td>
+        <td><span class="badge badge-success">✅ Başarılı</span></td>
+        <td>200 OK — JWT token döndü</td>
+      </tr>
+      <tr>
+        <td><strong>2.1</strong> Rezervasyon</td>
+        <td>Çalışma alanı ayırtma</td>
+        <td><span class="badge badge-success">✅ Başarılı</span></td>
+        <td>200 OK — Rezervasyon oluştu (id=1)</td>
+      </tr>
+      <tr>
+        <td><strong>2.2</strong> Çakışma</td>
+        <td>Aynı masa+saat tekrar rezervasyon</td>
+        <td><span class="badge badge-warning">⚠️ Kısmi</span></td>
+        <td>Engelledi ama 500 döndü (400 dönmeliydi)</td>
+      </tr>
+      <tr>
+        <td><strong>2.3</strong> Günlük Limit</td>
+        <td>3. rezervasyon denemesi (limit=2)</td>
+        <td><span class="badge badge-warning">⚠️ Kısmi</span></td>
+        <td>Engelledi ama 500 döndü (400 dönmeliydi)</td>
+      </tr>
+      <tr>
+        <td><strong>3.1</strong> QR Check-in</td>
+        <td>QR kod ile giriş onayı</td>
+        <td><span class="badge badge-success">✅ Başarılı</span></td>
+        <td>200 OK — +5 puan, durum COMPLETED</td>
+      </tr>
+      <tr>
+        <td><strong>3.2a</strong> Erken İptal</td>
+        <td>24+ saat önceden iptal</td>
+        <td><span class="badge badge-success">✅ Başarılı</span></td>
+        <td>scoreChange: +3, puanlar iade edildi</td>
+      </tr>
+      <tr>
+        <td><strong>3.2b</strong> Geç İptal</td>
+        <td>30 dakika önceden iptal</td>
+        <td><span class="badge badge-success">✅ Başarılı</span></td>
+        <td>scoreChange: -5, puan iade edilmedi</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- VERİTABANI DURUMU -->
+  <div class="db-section">
+    <h4>🗄️ Veritabanı Son Durumu (H2 Konsolu ile doğrulandı)</h4>
+    <table>
+      <thead><tr><th>ID</th><th>İsim</th><th>Email</th><th>Sorumluluk Puanı</th></tr></thead>
+      <tbody><tr><td>1</td><td>Ahmet Yilmaz</td><td>ahmet@std.yeditepe.edu.tr</td><td><strong>55</strong></td></tr></tbody>
+    </table>
+    <p style="font-size:12px; color:#64748b; margin-top:-10px;">Puan hesabı: Başlangıç(50) + QR Check-in(+5) = <strong>55</strong></p>
+    <table>
+      <thead><tr><th>ID</th><th>Durum</th><th>QR Payload</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><span class="badge badge-success">COMPLETED</span></td><td>QR_1776858331010</td></tr>
+        <tr><td>2</td><td><span class="badge" style="background:#dbeafe;color:#1e40af;">ACTIVE</span></td><td>QR_1776858355801</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ÇALIŞAN ŞEYLER -->
+  <h2><span class="icon">🌟</span> Çalışan Harika Şeyler</h2>
+
+  <h3>1. Kayıt ve Giriş Sistemi Sağlam</h3>
+  <ul>
+    <li>Kullanıcı kaydı ve girişi sorunsuz çalışıyor</li>
+    <li>Şifreler <strong>BCrypt</strong> ile güvenli şekilde hash'leniyor</li>
+    <li>JWT token üretimi çalışıyor — gerçek <code>eyJhbG...</code> token dönüyor</li>
+    <li>Email domain kontrolü var: sadece <strong>@std.yeditepe.edu.tr</strong> kabul ediliyor</li>
+  </ul>
+
+  <h3>2. JWT Güvenlik Zinciri Çalışıyor</h3>
+  <ul>
+    <li>Token olmadan korumalı endpoint'lere erişim engelleniyor</li>
+    <li>Her kullanıcı sadece kendi rezervasyonlarını görebiliyor</li>
+  </ul>
+
+  <h3>3. Rezervasyon İş Kuralları Çalışıyor</h3>
+  <ul>
+    <li>Çakışma kontrolü: aynı masa + gün + saat tekrar rezerve edilemiyor</li>
+    <li>Günlük limit: günde en fazla 2 rezervasyon yapılabiliyor</li>
+  </ul>
+
+  <h3>4. QR Check-in ve Puanlama</h3>
+  <ul>
+    <li>QR payload eşleşmesi doğru çalışıyor</li>
+    <li>Başarılı check-in → durum <strong>COMPLETED</strong> + <strong>+5 puan</strong></li>
+    <li>Erken iptal → <strong>+3 puan</strong> ödül / Geç iptal → <strong>-5 puan</strong> ceza</li>
+  </ul>
+
+  <!-- BUGLAR -->
+  <h2><span class="icon">🛠️</span> Düzeltilmesi Gerekenler / Buglar</h2>
+
+  <div class="card card-red">
+    <div class="card-title">🔴 Bug 1: Hata Mesajları 500 Dönüyor (Kritik)</div>
+    <p><strong>Ne oluyor:</strong> Çakışma veya limit ihlali gibi iş kuralı hataları <code>500 Internal Server Error</code> olarak dönüyor.</p>
+    <p><strong>Ne olmalı:</strong> <code>400 Bad Request</code> veya <code>409 Conflict</code> dönmeli.</p>
+    <p><strong>Neden önemli:</strong> Frontend ekibi 500'ü "sunucu çöktü" olarak algılar. Kullanıcıya anlamlı hata mesajı gösteremez.</p>
+    <p><strong>Çözüm:</strong> <code>@ControllerAdvice</code> ile <code>GlobalExceptionHandler</code> sınıfı oluşturulmalı. Özel exception sınıfları kullanılmalı.</p>
+  </div>
+
+  <div class="card card-yellow">
+    <div class="card-title">🟡 Bug 2: İptal İşlemi Veritabanını Güncellemiyor (Orta)</div>
+    <p><strong>Ne oluyor:</strong> İptal endpoint'i doğru puan hesaplıyor ama:</p>
+    <ul>
+      <li>Rezervasyonun durumunu <code>CANCELLED</code> yapmıyor (hâlâ ACTIVE)</li>
+      <li>Hesaplanan puanı kullanıcının skoruna uygulamıyor</li>
+    </ul>
+    <p><strong>Çözüm:</strong> <code>cancelReservation</code> içinde <code>ResponsibilityScoreService.applyDelta()</code> çağrılmalı ve durum güncellenmeli.</p>
+  </div>
+
+  <div class="card card-yellow">
+    <div class="card-title">🟡 Bug 3: QR Payload API Yanıtında Dönmüyor (Orta)</div>
+    <p><strong>Ne oluyor:</strong> <code>GET /reservations/me</code> endpoint'i QR payload bilgisini döndürmüyor.</p>
+    <p><strong>Neden önemli:</strong> Mobil uygulama QR kodunu göstermek için bu bilgiye ihtiyaç duyar.</p>
+    <p><strong>Çözüm:</strong> <code>ReservationDetailDto</code>'ya <code>qrPayload</code> alanı eklenip mapper'da doldurulmalı.</p>
+  </div>
+
+  <div class="card card-green">
+    <div class="card-title">🟢 Bug 4: Register 201 Yerine 200 Dönüyor (Düşük)</div>
+    <p><strong>Ne oluyor:</strong> Yeni kaynak oluşturan endpoint'ler <code>201 Created</code> yerine <code>200 OK</code> dönüyor.</p>
+    <p><strong>Çözüm:</strong> Controller metotlarına <code>@ResponseStatus(HttpStatus.CREATED)</code> eklenmeli.</p>
+  </div>
+
+  <div class="card card-green">
+    <div class="card-title">🟢 Bug 5: "No-Show" Mekanizması Eksik (Düşük)</div>
+    <p><strong>Ne oluyor:</strong> Kullanıcı hiç gelmezse sistematik puan düşüren bir mekanizma yok.</p>
+    <p><strong>Çözüm:</strong> <code>@Scheduled</code> ile slot sonrası check-in yapılmamış rezervasyonları <code>NO_SHOW</code> yapıp <code>-10 puan</code> uygulayan servis yazılmalı.</p>
+  </div>
+
+  <!-- FRONTEND NOTLARI -->
+  <h2><span class="icon">📝</span> Frontend Ekibine Notlar</h2>
+
+  <h3>🔑 Token Kullanımı</h3>
+  <div class="code-block">
+    <span class="comment">// Her istekte Header'a şu formatta koyun:</span><br>
+    <span class="key">Authorization:</span> <span class="val">Bearer eyJhbGciOiJIUzM4NCJ9...</span><br><br>
+    <span class="comment">// Token, login veya register yanıtından alınır → "accessToken" alanı</span><br>
+    <span class="comment">// Token 24 saat geçerli</span>
+  </div>
+
+  <h3>📋 Kayıt (Register) Kuralları</h3>
+  <ul>
+    <li>Email <strong>zorunlu olarak</strong> <code>@std.yeditepe.edu.tr</code> ile bitmeli</li>
+    <li><code>year</code> alanı <strong>zorunlu</strong> (integer, örn: 1, 2, 3, 4)</li>
+    <li>Aynı email ile tekrar kayıt olunmaya çalışılırsa hata dönecek</li>
+  </ul>
+
+  <h3>📅 Rezervasyon Kuralları</h3>
+  <ul>
+    <li>Günde en fazla <strong>2 rezervasyon</strong> yapılabilir</li>
+    <li>Aynı masa + gün + saat dilimine tekrar atılamaz</li>
+    <li>⚠️ Hata durumunda şu an <strong>500</strong> dönüyor — frontend'de 500'ü de yakalayıp kullanıcıya uygun mesaj gösterin</li>
+    <li>Zorunlu alanlar: <code>date</code>, <code>slotId</code>, <code>workspaceId</code>, <code>courseCode</code>, <code>reservationType</code>, <code>allowStudyBuddy</code></li>
+  </ul>
+
+  <h3>📱 Check-in Endpoint</h3>
+  <ul>
+    <li>Endpoint: <code>POST /api/v1/checkin/verify</code> (⚠️ tire yok, <strong>checkin</strong> bitişik)</li>
+    <li><code>reservationId</code> string olarak gönderilmeli ("1" gibi)</li>
+    <li>QR payload eşleşmezse <code>success: false</code> döner</li>
+  </ul>
+
+  <h3>❌ İptal Endpoint</h3>
+  <ul>
+    <li>Endpoint: <code>POST /api/v1/reservations/{id}/cancel</code></li>
+    <li>Body'de <code>cancelledAt</code> ve <code>slotStartAt</code> gönderin (ISO-8601 format)</li>
+    <li>Yanıtta <code>scoreChange</code> alanı puan değişimini gösterir (+3 veya -5)</li>
+  </ul>
+
+  <!-- SONUÇ -->
+  <div class="note-box">
+    <strong>📌 Genel Değerlendirme:</strong> Backend'in temel iş akışları (kayıt → giriş → rezervasyon → check-in → iptal) çalışıyor. 
+    Ana sorun hata yönetiminin eksikliği (500 vs 400) ve iptal işleminin veritabanını güncellemememsi. 
+    Bu iki düzeltme yapıldığında sistem üretime hazır hale gelir.
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    StudySync Backend QA Raporu — 22 Nisan 2026 — Tüm hakları saklıdır.
+  </div>
+
+</div>
+
+</body>
+</html>
