@@ -7,6 +7,9 @@ import com.studysync.domain.dto.LoginResponseDto;
 import com.studysync.domain.dto.RegisterRequestDto;
 import com.studysync.domain.dto.UserSummaryDto;
 import com.studysync.domain.entity.UserAccount;
+import com.studysync.domain.exception.EmailAlreadyExistsException;
+import com.studysync.domain.exception.InvalidCredentialsException;
+import com.studysync.domain.exception.InvalidDomainException;
 import com.studysync.domain.repository.UserAccountRepository;
 import com.studysync.security.JwtTokenProvider;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -42,10 +45,10 @@ public class AuthService {
 
     public LoginResponseDto login(LoginRequestDto request) {
         UserAccount userAccount = userAccountRepository.findByEmailIgnoreCase(request.email())
-                .orElseThrow(() -> new RuntimeException("Invalid email or password"));
+                .orElseThrow(InvalidCredentialsException::new);
 
         if (!passwordEncoder.matches(request.password(), userAccount.getPasswordHash())) {
-            throw new RuntimeException("Invalid email or password");
+            throw new InvalidCredentialsException();
         }
 
         // Antigravity Modification: Wired up secure JJWT cryptographic signing logic instead of generating stub token strings.
@@ -78,12 +81,12 @@ public class AuthService {
          *  - JWT + refresh persist
          */
         if (userAccountRepository.existsByEmailIgnoreCase(request.email())) {
-            throw new IllegalStateException("Email already registered — map to 409 in GlobalExceptionHandler");
+            throw new EmailAlreadyExistsException(request.email());
         }
         
         // Antigravity Modification: Hardcoded University domain rule rejection policy mapping.
         if (!request.email().trim().toLowerCase().endsWith("@std.yeditepe.edu.tr")) {
-            throw new IllegalArgumentException("Only @std.yeditepe.edu.tr emails are allowed.");
+            throw new InvalidDomainException("@std.yeditepe.edu.tr");
         }
 
         final UserAccount u = new UserAccount();

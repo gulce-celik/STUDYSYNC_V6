@@ -2,6 +2,7 @@
 
 package com.studysync.api.common;
 
+import com.studysync.domain.exception.StudySyncException;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -27,11 +28,8 @@ public class GlobalExceptionHandler {
                 .body(Map.of("message", "Validation failed", "fieldErrors", errors));
     }
 
-    @ExceptionHandler(IllegalStateException.class)
-    public ResponseEntity<Map<String, String>> conflict(IllegalStateException ex) {
-        if (ex.getMessage() != null && ex.getMessage().contains("already registered")) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", ex.getMessage()));
-        }
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", ex.getMessage()));
+    @ExceptionHandler(StudySyncException.class)
+    public ResponseEntity<Map<String, String>> handleStudySyncException(StudySyncException ex) {
+        return ResponseEntity.status(ex.getStatus()).body(Map.of("message", ex.getMessage()));
     }
 }

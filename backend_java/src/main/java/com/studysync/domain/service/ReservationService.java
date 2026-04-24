@@ -14,6 +14,9 @@ import com.studysync.domain.repository.ReservationRecordRepository;
 import com.studysync.domain.repository.UserAccountRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.studysync.domain.dto.CancelReservationRequestDto;
+import com.studysync.domain.exception.AccessDeniedException;
+import com.studysync.domain.exception.ResourceNotFoundException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -48,21 +51,21 @@ public class ReservationService {
 
     private final CancellationScoringPolicy cancellationScoringPolicy;
     private final ReservationRecordRepository reservationRepository;
-    private final UserAccountRepository userRepository;
+    private final ResponsibilityScoreService responsibilityScoreService;
     private final ObjectMapper objectMapper;
 
     public ReservationService(CancellationScoringPolicy cancellationScoringPolicy, 
                               ReservationRecordRepository reservationRepository,
-                              UserAccountRepository userRepository,
+                              ResponsibilityScoreService responsibilityScoreService,
                               ObjectMapper objectMapper) {
         this.cancellationScoringPolicy = cancellationScoringPolicy;
         this.reservationRepository = reservationRepository;
-        this.userRepository = userRepository;
+        this.responsibilityScoreService = responsibilityScoreService;
         this.objectMapper = objectMapper;
     }
 
     public List<WorkspaceDto> getWorkspaces(String date, String slotId, String type) {
-        // TODO: Haritayı DB/seed’den doldurun. Şimdilik boş liste (Flutter tarafı mock veriye düşebilir).
+        // Antigravity Modification: Reverted to empty list so Flutter app uses its built-in Mock Workspaces.
         return List.of();
     }
 
@@ -129,12 +132,36 @@ public class ReservationService {
     }
 
     public ActionResultDto cancelReservation(String reservationId) {
-        // TODO: Kaydı iptal et; zaman bilgisi yoksa varsayılan skor politikası veya "detay gönder" uyarısı.
-        return new ActionResultDto(true, "Stub cancel for " + reservationId, null, null);
+        return cancelReservation(reservationId, null, null);
     }
 
     public ActionResultDto cancelReservation(String reservationId, LocalDateTime cancelledAt, LocalDateTime slotStartAt) {
-        // TODO: rezervasyonu iptal et + ResponsibilityScoreService.applyDelta
-        return cancellationScoringPolicy.evaluate(reservationId, cancelledAt, slotStartAt);
+        // Antigravity Modification: Implemented full secure cancellation flow with ownership check and status persistence.
+        final ReservationRecord record = reservationRepository.findById(Long.valueOf(reservationId))
+                .orElseThrow(() -> new ResourceNotFoundException("Reservation", reservationId));
+
+        // Ownership validation
+        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        if (!(principal instanceof UserAccount currentUser) || !record.getUser().getId().equals(currentUser.getId())) {
+            throw new AccessDeniedException("You can only cancel your own reservations.");
+        }
+
+        if ("CANCELLED".equals(record.getStatus())) {
+            return new ActionResultDto(false, "Reservation is already cancelled.", 0, null);
+        }
+
+        // Apply policy
+        ActionResultDto result = cancellationScoringPolicy.evaluate(reservationId, cancelledAt, slotStartAt);
+        
+        // Update state
+        record.setStatus("CANCELLED");
+        reservationRepository.save(record);
+
+        // Apply scoring if applicable
+        if (result.scoreChange() != null && result.scoreChange() != 0) {
+            responsibilityScoreService.applyDelta(currentUser.getId(), result.scoreChange());
+        }
+
+        return result;
     }
 }
