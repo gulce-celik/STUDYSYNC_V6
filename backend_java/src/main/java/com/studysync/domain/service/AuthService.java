@@ -19,10 +19,15 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Kimlik doğrulama ve kayıt — login JWT, refresh akışı, e-posta tekilliği.
  *
- * <p><b>login:</b> {@link UserAccountRepository#findByEmailIgnoreCase(String)} + {@link PasswordEncoder#matches};
- * başarıda {@link com.studysync.security.JwtTokenProvider} ile tokenlar (şimdilik stub string).
+ * <p>
+ * <b>login:</b> {@link UserAccountRepository#findByEmailIgnoreCase(String)} +
+ * {@link PasswordEncoder#matches};
+ * başarıda {@link com.studysync.security.JwtTokenProvider} ile tokenlar
+ * (şimdilik stub string).
  *
- * <p><b>register:</b> alan doğrulama, şifre hash, {@link UserAccount} insert; isteğe bağlı ders seçimleri.
+ * <p>
+ * <b>register:</b> alan doğrulama, şifre hash, {@link UserAccount} insert;
+ * isteğe bağlı ders seçimleri.
  */
 @Service
 public class AuthService {
@@ -51,7 +56,8 @@ public class AuthService {
             throw new InvalidCredentialsException();
         }
 
-        // Antigravity Modification: Wired up secure JJWT cryptographic signing logic instead of generating stub token strings.
+        // Antigravity Modification: Wired up secure JJWT cryptographic signing logic
+        // instead of generating stub token strings.
         String accessToken = jwtTokenProvider.createAccessTokenForUserId(userAccount.getId());
         String refreshToken = jwtTokenProvider.createRefreshTokenValue();
 
@@ -65,7 +71,8 @@ public class AuthService {
                 userAccount.getNickname(),
                 userAccount.getEmail(),
                 deptName,
-                userAccount.getYear());
+                userAccount.getYear(),
+                userAccount.getResponsibilityScore());
 
         return new LoginResponseDto(accessToken, refreshToken, summary);
     }
@@ -74,17 +81,18 @@ public class AuthService {
     public LoginResponseDto register(RegisterRequestDto request) {
         /*
          * TODO:
-         *  - existsByEmail → 409
-         *  - email domain @std.yeditepe.edu.tr
-         *  - passwordEncoder.encode
-         *  - new UserAccount → save
-         *  - JWT + refresh persist
+         * - existsByEmail → 409
+         * - email domain @std.yeditepe.edu.tr
+         * - passwordEncoder.encode
+         * - new UserAccount → save
+         * - JWT + refresh persist
          */
         if (userAccountRepository.existsByEmailIgnoreCase(request.email())) {
             throw new EmailAlreadyExistsException(request.email());
         }
-        
-        // Antigravity Modification: Hardcoded University domain rule rejection policy mapping.
+
+        // Antigravity Modification: Hardcoded University domain rule rejection policy
+        // mapping.
         if (!request.email().trim().toLowerCase().endsWith("@std.yeditepe.edu.tr")) {
             throw new InvalidDomainException("@std.yeditepe.edu.tr");
         }
@@ -101,15 +109,15 @@ public class AuthService {
         final String deptName = referenceCatalogService
                 .resolveDepartmentName(u.getDepartmentId())
                 .orElse(u.getDepartmentId());
-        final UserSummaryDto summary =
-                new UserSummaryDto(
-                        String.valueOf(u.getId()),
-                        u.getName(),
-                        u.getNickname(),
-                        u.getEmail(),
-                        deptName,
-                        u.getYear());
-        
+        final UserSummaryDto summary = new UserSummaryDto(
+                String.valueOf(u.getId()),
+                u.getName(),
+                u.getNickname(),
+                u.getEmail(),
+                deptName,
+                u.getYear(),
+                u.getResponsibilityScore());
+
         String accessToken = jwtTokenProvider.createAccessTokenForUserId(u.getId());
         String refreshToken = jwtTokenProvider.createRefreshTokenValue();
 

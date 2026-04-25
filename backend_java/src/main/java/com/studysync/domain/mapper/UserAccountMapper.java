@@ -25,6 +25,7 @@ public final class UserAccountMapper {
                 u.getNickname(),
                 u.getEmail(),
                 departmentDisplayName != null ? departmentDisplayName : u.getDepartmentId(),
-                u.getYear());
+                u.getYear(),
+                u.getResponsibilityScore());
     }
 }

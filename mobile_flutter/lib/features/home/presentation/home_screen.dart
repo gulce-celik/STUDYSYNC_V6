@@ -63,7 +63,11 @@ class _HomeScreenState extends State<HomeScreen> {
           }).toList();
         }
       });
-    } catch (_) {}
+    } catch (_) {
+      setState(() {
+        _apiUpcomingReservations = HomeMockData.upcomingReservations;
+      });
+    }
   }
 
   void _acceptInvitation(String id) {

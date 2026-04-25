@@ -39,13 +39,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
         _all = remote.isNotEmpty ? remote : BookingsMockData.sampleBookings();
         _loading = false;
       });
-    } on DioException {
-      if (!mounted) return;
-      setState(() {
-        _all = BookingsMockData.sampleBookings();
-        _loading = false;
-      });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() {
         _all = BookingsMockData.sampleBookings();
@@ -72,7 +66,6 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
     }
     final history = _all.where(_isHistoryTab).toList();
     if (history.isNotEmpty) return history;
-    // Demo-friendly fallback: if backend has no history yet, still show sample past outcomes.
     return BookingsMockData.sampleBookings().where(_isHistoryTab).toList();
   }
 
@@ -344,7 +337,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                                           ),
                                         ),
                                       if (_isActiveTab(r) && !_isCheckedIn(r)) const SizedBox(width: 8),
-                                      if (_isActiveTab(r) && r.status.toUpperCase() == 'PENDING')
+                                      if (_isActiveTab(r) && (r.status.toUpperCase() == 'PENDING' || r.status.toUpperCase() == 'ACTIVE'))
                                         Expanded(
                                           child: OutlinedButton(
                                             onPressed: () => _cancel(r),

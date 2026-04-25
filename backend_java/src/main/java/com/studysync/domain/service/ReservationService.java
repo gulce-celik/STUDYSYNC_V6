@@ -24,26 +24,37 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 /**
- * Rezervasyon alan iş kuralları — şimdilik boş/taş iskelet; gerçek mantığı siz yazacaksınız.
+ * Rezervasyon alan iş kuralları — şimdilik boş/taş iskelet; gerçek mantığı siz
+ * yazacaksınız.
  *
- * <p><b>getWorkspaces(date, slotId, type)</b>
- *
- * <ul>
- *   <li>Veritabanından veya harita servisinden o tarih + slot + tip (bireysel/grup) için masa/oda listesi.
- *   <li>Doluluk: o slotta başka rezervasyon var mı, anlık sensör/operatör güncellemesi varsa birleştirin.
- *   <li>Analiz dokümanındaki Mon/Fri penceresi, anlık masa kuralları burada veya üst katmanda uygulanmalı.
- * </ul>
- *
- * <p><b>createReservation(...)</b> — Controller’dan parse edilen gövde ile:
+ * <p>
+ * <b>getWorkspaces(date, slotId, type)</b>
  *
  * <ul>
- *   <li>Çakışma kontrolü, günlük kota, kullanıcı sorumluluk puanı eşiği.
- *   <li>Persist: {@code Reservation} entity; yanıt {@code ReservationDetailDto} ile aynı alanlar.
+ * <li>Veritabanından veya harita servisinden o tarih + slot + tip
+ * (bireysel/grup) için masa/oda listesi.
+ * <li>Doluluk: o slotta başka rezervasyon var mı, anlık sensör/operatör
+ * güncellemesi varsa birleştirin.
+ * <li>Analiz dokümanındaki Mon/Fri penceresi, anlık masa kuralları burada veya
+ * üst katmanda uygulanmalı.
  * </ul>
  *
- * <p><b>myReservations()</b> — JWT’den userId okuyup sadece o kullanıcının kayıtlarını döndürün.
+ * <p>
+ * <b>createReservation(...)</b> — Controller’dan parse edilen gövde ile:
  *
- * <p><b>cancelReservation</b> — {@code docs/decision-cancellation-scoring.md} ve {@code api-contract-v1.md}:
+ * <ul>
+ * <li>Çakışma kontrolü, günlük kota, kullanıcı sorumluluk puanı eşiği.
+ * <li>Persist: {@code Reservation} entity; yanıt {@code ReservationDetailDto}
+ * ile aynı alanlar.
+ * </ul>
+ *
+ * <p>
+ * <b>myReservations()</b> — JWT’den userId okuyup sadece o kullanıcının
+ * kayıtlarını döndürün.
+ *
+ * <p>
+ * <b>cancelReservation</b> — {@code docs/decision-cancellation-scoring.md} ve
+ * {@code api-contract-v1.md}:
  * iptal zamanına göre {@code scoreChange}, {@code pointsRefunded} hesaplayın.
  */
 @Service
@@ -54,10 +65,10 @@ public class ReservationService {
     private final ResponsibilityScoreService responsibilityScoreService;
     private final ObjectMapper objectMapper;
 
-    public ReservationService(CancellationScoringPolicy cancellationScoringPolicy, 
-                              ReservationRecordRepository reservationRepository,
-                              ResponsibilityScoreService responsibilityScoreService,
-                              ObjectMapper objectMapper) {
+    public ReservationService(CancellationScoringPolicy cancellationScoringPolicy,
+            ReservationRecordRepository reservationRepository,
+            ResponsibilityScoreService responsibilityScoreService,
+            ObjectMapper objectMapper) {
         this.cancellationScoringPolicy = cancellationScoringPolicy;
         this.reservationRepository = reservationRepository;
         this.responsibilityScoreService = responsibilityScoreService;
@@ -65,20 +76,21 @@ public class ReservationService {
     }
 
     public List<WorkspaceDto> getWorkspaces(String date, String slotId, String type) {
-        // Antigravity Modification: Reverted to empty list so Flutter app uses its built-in Mock Workspaces.
+        // Antigravity Modification: Reverted to empty list so Flutter app uses its
+        // built-in Mock Workspaces.
         return List.of();
     }
 
     public ReservationDetailDto createReservation(CreateReservationRequestDto request) {
         // Validation: Overlap check
         boolean hasOverlap = reservationRepository.existsByWorkspaceIdAndDateAndSlotIdAndStatusIn(
-            request.workspaceId(), request.date(), request.slotId(), List.of("ACTIVE", "PENDING")
-        );
+                request.workspaceId(), request.date(), request.slotId(), List.of("ACTIVE", "PENDING"));
         if (hasOverlap) {
             throw new IllegalStateException("This slot is already booked for the selected workspace.");
         }
 
-        // Antigravity Modification: Replaced dummy user hardcoding with real Phase 3 Security Context user extraction!
+        // Antigravity Modification: Replaced dummy user hardcoding with real Phase 3
+        // Security Context user extraction!
         Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         if (!(principal instanceof UserAccount)) {
             throw new IllegalStateException("Authentication is missing. Please log in first.");
@@ -88,8 +100,7 @@ public class ReservationService {
 
         // Validation: Quota validation (Max 2 reservations per day)
         int dailyReservations = reservationRepository.countByUser_IdAndDateAndStatusIn(
-            defaultUserId, request.date(), List.of("ACTIVE", "PENDING", "COMPLETED")
-        );
+                defaultUserId, request.date(), List.of("ACTIVE", "PENDING", "COMPLETED"));
         if (dailyReservations >= 2) {
             throw new IllegalStateException("Daily limit reached. You can only make 2 reservations per day.");
         }
@@ -121,13 +132,15 @@ public class ReservationService {
     }
 
     public List<ReservationDetailDto> myReservations() {
-        // Antigravity Modification: Implemented user-specific logic to fetch reservation history from Database.
+        // Antigravity Modification: Implemented user-specific logic to fetch
+        // reservation history from Database.
         Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         if (!(principal instanceof UserAccount)) {
             return List.of();
         }
         UserAccount currentUser = (UserAccount) principal;
-        List<ReservationRecord> records = reservationRepository.findByUser_IdOrderByDateDescSlotIdAsc(currentUser.getId());
+        List<ReservationRecord> records = reservationRepository
+                .findByUser_IdOrderByDateDescSlotIdAsc(currentUser.getId());
         return records.stream().map(r -> ReservationMapper.toDetail(r, objectMapper)).collect(Collectors.toList());
     }
 
@@ -135,8 +148,10 @@ public class ReservationService {
         return cancelReservation(reservationId, null, null);
     }
 
-    public ActionResultDto cancelReservation(String reservationId, LocalDateTime cancelledAt, LocalDateTime slotStartAt) {
-        // Antigravity Modification: Implemented full secure cancellation flow with ownership check and status persistence.
+    public ActionResultDto cancelReservation(String reservationId, LocalDateTime cancelledAt,
+            LocalDateTime slotStartAt) {
+        // Antigravity Modification: Implemented full secure cancellation flow with
+        // ownership check and status persistence.
         final ReservationRecord record = reservationRepository.findById(Long.valueOf(reservationId))
                 .orElseThrow(() -> new ResourceNotFoundException("Reservation", reservationId));
 
@@ -152,7 +167,7 @@ public class ReservationService {
 
         // Apply policy
         ActionResultDto result = cancellationScoringPolicy.evaluate(reservationId, cancelledAt, slotStartAt);
-        
+
         // Update state
         record.setStatus("CANCELLED");
         reservationRepository.save(record);
