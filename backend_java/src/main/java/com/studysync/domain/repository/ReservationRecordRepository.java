@@ -25,4 +25,8 @@ public interface ReservationRecordRepository extends JpaRepository<ReservationRe
             Collection<String> statuses);
 
     int countByUser_IdAndDateAndStatusIn(Long userId, String date, Collection<String> statuses);
+
+    long countByUser_IdAndStatusIn(Long userId, Collection<String> statuses);
+
+    List<ReservationRecord> findByUser_IdAndStatusInOrderByIdAsc(Long userId, Collection<String> statuses);
 }

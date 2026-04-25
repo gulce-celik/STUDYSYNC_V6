@@ -9,10 +9,12 @@ import org.springframework.data.jpa.repository.JpaRepository;
 /**
  * Kayıp eşya kayıtları — Profile “Lost items” listesi.
  *
- * <p><b>Sorgular:</b> kullanıcıya göre; isteğe bağlı status filtresi.
+ * <p>
+ * <b>Sorgular:</b> kullanıcıya göre; isteğe bağlı status filtresi.
  */
 public interface LostItemRecordRepository extends JpaRepository<LostItemRecord, Long> {
 
-    // Antigravity Modification: Renamed derived query to match the entity property 'reportedBy'
+    // Antigravity Modification: Renamed derived query to match the entity property
+    // 'reportedBy'
     List<LostItemRecord> findByReportedBy_IdOrderByReportedAtDesc(Long userId);
 }

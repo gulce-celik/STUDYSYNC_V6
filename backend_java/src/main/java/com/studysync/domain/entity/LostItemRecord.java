@@ -46,7 +46,13 @@ public class LostItemRecord {
     @Column(nullable = false)
     private Instant reportedAt;
 
-    protected LostItemRecord() {}
+    @Column(nullable = false)
+    private String category; // e.g., ELECTRONICS, KEYS, WALLET, BOOK
+
+    @Column(nullable = false)
+    private String status; // LOST, FOUND, CLAIMED, RETURNED
+
+    public LostItemRecord() {}
 
     public Long getId() {
         return id;
@@ -82,5 +88,21 @@ public class LostItemRecord {
 
     public void setReportedAt(Instant reportedAt) {
         this.reportedAt = reportedAt;
+    }
+
+    public String getCategory() {
+        return category;
+    }
+
+    public void setCategory(String category) {
+        this.category = category;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
     }
 }

@@ -27,11 +27,22 @@ public class QrCheckInPolicy {
         this.clock = clock;
     }
 
-    /** Şimdilik iskelet: gerçek slot zamanı entity’de yoksa genişletme gerekir. */
+    /** 
+     * Verifies QR payload and ensures the check-in is happening on the correct day.
+     */
     public boolean payloadMatchesReservation(ReservationRecord reservation, String qrPayload) {
         if (reservation == null || qrPayload == null) {
             return false;
         }
+
+        // Antigravity Modification: Strict date check - only allow check-in on the reservation date
+        java.time.LocalDate today = java.time.LocalDate.now(clock);
+        java.time.LocalDate reservationDate = java.time.LocalDate.parse(reservation.getDate());
+        
+        if (!today.equals(reservationDate)) {
+            return false;
+        }
+
         return qrPayload.equals(reservation.getQrPayload());
     }
 

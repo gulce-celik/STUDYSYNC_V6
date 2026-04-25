@@ -32,13 +32,14 @@ public class CheckInService {
         this.responsibilityScoreService = responsibilityScoreService;
     }
 
+    @org.springframework.transaction.annotation.Transactional
     public CheckInResultDto verify(CheckInVerifyRequestDto request) {
         // Antigravity Modification: Implemented true QR Check-in business logic, state transitions, and reward allocations
         long resId;
         try {
             resId = Long.parseLong(request.reservationId());
         } catch (NumberFormatException e) {
-            return new CheckInResultDto(false, "Invalid reservation IDformat");
+            return new CheckInResultDto(false, "Invalid reservation ID format");
         }
 
         ReservationRecord reservation = reservationRepository.findById(resId).orElse(null);
@@ -52,13 +53,32 @@ public class CheckInService {
         }
 
         if (!qrCheckInPolicy.payloadMatchesReservation(reservation, request.qrPayload())) {
-            return new CheckInResultDto(false, "Invalid QR Payload match");
+            return new CheckInResultDto(false, "Invalid check-in attempt: You can only check in on the day of your reservation and with the correct QR code.");
         }
 
         reservation.setStatus("COMPLETED");
-        reservationRepository.save(reservation);
+        reservationRepository.saveAndFlush(reservation);
 
         responsibilityScoreService.applyDelta(reservation.getUser().getId(), 5);
+
+        // Antigravity Modification: Enforce history limit (max 10 completed/cancelled elements)
+        Long userId = reservation.getUser().getId();
+        java.util.List<String> historyStatuses = java.util.List.of("COMPLETED", "CANCELLED");
+        long historyCount = reservationRepository.countByUser_IdAndStatusIn(userId, historyStatuses);
+        
+        if (historyCount > 10) {
+            long itemsToDelete = historyCount - 10;
+            // Find oldest history items by ID (First In First Out), but EXCLUDE the one we just completed
+            java.util.List<ReservationRecord> oldestItems = reservationRepository
+                .findByUser_IdAndStatusInOrderByIdAsc(userId, historyStatuses)
+                .stream()
+                .filter(r -> !r.getId().equals(reservation.getId()))
+                .collect(java.util.stream.Collectors.toList());
+            
+            for (int i = 0; i < Math.min(itemsToDelete, oldestItems.size()); i++) {
+                reservationRepository.delete(oldestItems.get(i));
+            }
+        }
 
         return new CheckInResultDto(true, "Check-in successful! +5 responsibility score added.");
     }

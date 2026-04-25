@@ -187,7 +187,26 @@ public class ReservationService {
 
         // Update state
         record.setStatus("CANCELLED");
-        reservationRepository.save(record);
+        reservationRepository.saveAndFlush(record);
+
+        // Antigravity Modification: Enforce history limit (max 10 completed/cancelled elements)
+        Long userId = record.getUser().getId();
+        java.util.List<String> historyStatuses = java.util.List.of("COMPLETED", "CANCELLED");
+        long historyCount = reservationRepository.countByUser_IdAndStatusIn(userId, historyStatuses);
+        
+        if (historyCount > 10) {
+            long itemsToDelete = historyCount - 10;
+            // Find oldest history items by ID (First In First Out), but EXCLUDE the one we just cancelled
+            java.util.List<ReservationRecord> oldestItems = reservationRepository
+                .findByUser_IdAndStatusInOrderByIdAsc(userId, historyStatuses)
+                .stream()
+                .filter(r -> !r.getId().equals(record.getId()))
+                .collect(java.util.stream.Collectors.toList());
+            
+            for (int i = 0; i < Math.min(itemsToDelete, oldestItems.size()); i++) {
+                reservationRepository.delete(oldestItems.get(i));
+            }
+        }
 
         // Apply scoring if applicable
         if (result.scoreChange() != null && result.scoreChange() != 0) {

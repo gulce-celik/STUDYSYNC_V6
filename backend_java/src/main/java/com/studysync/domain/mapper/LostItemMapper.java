@@ -20,6 +20,13 @@ public final class LostItemMapper {
             return null;
         }
         final String at = r.getReportedAt() != null ? ISO.format(r.getReportedAt()) : "";
-        return new LostItemDto(String.valueOf(r.getId()), r.getWorkspaceId(), r.getDescription(), at);
+        return new LostItemDto(
+            String.valueOf(r.getId()), 
+            r.getWorkspaceId(), 
+            r.getDescription(), 
+            at,
+            r.getCategory() != null ? r.getCategory() : "GENERAL",
+            r.getStatus() != null ? r.getStatus() : "REPORTED"
+        );
     }
 }

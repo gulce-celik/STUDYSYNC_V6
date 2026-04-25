@@ -1,29 +1,44 @@
-/* FILE PURPOSE: Is kurallari ve use-case akislari; controller ve repository arasinda orkestrasyon. */
-
 package com.studysync.domain.service;
 
 import com.studysync.domain.dto.ActionResultDto;
 import com.studysync.domain.dto.LostItemDto;
+import com.studysync.domain.entity.LostItemRecord;
+import com.studysync.domain.repository.LostItemRecordRepository;
 import java.util.List;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
-/**
- * Kayıp eşya raporları.
- *
- * <p><b>getLostItems()</b>: Süresi dolmamış (ör. 24 saat) kayıtları listeleyin; workspace ile join.
- *
- * <p><b>reportLostItem</b>: Yeni kayıt, {@code reportedAt} sunucu saati; süre sonunda otomatik arşiv/cron.
- */
 @Service
 public class LostFoundService {
 
+    private final LostItemRecordRepository lostItemRepository;
+
+    public LostFoundService(LostItemRecordRepository lostItemRepository) {
+        this.lostItemRepository = lostItemRepository;
+    }
+
     public List<LostItemDto> getLostItems() {
-        // TODO: DB sorgusu. Boş liste → Flutter örnek veriye dönebilir.
-        return List.of();
+        return lostItemRepository.findAll().stream()
+            .map(r -> new LostItemDto(
+                r.getId().toString(),
+                r.getWorkspaceId(),
+                r.getDescription(),
+                r.getReportedAt().toString(),
+                r.getCategory() != null ? r.getCategory() : "GENERAL",
+                r.getStatus() != null ? r.getStatus() : "REPORTED"
+            ))
+            .collect(Collectors.toList());
     }
 
     public ActionResultDto reportLostItem(String workspaceId, String description) {
-        // TODO: Validasyon + insert; haritada sarı gösterim için istemci workspaceId kullanıyor.
-        return new ActionResultDto(true, "Stub report at " + workspaceId, null, null);
+        LostItemRecord record = new LostItemRecord();
+        record.setWorkspaceId(workspaceId);
+        record.setDescription(description);
+        record.setReportedAt(java.time.Instant.now());
+        record.setCategory("GENERAL");
+        record.setStatus("REPORTED");
+        
+        lostItemRepository.save(record);
+        return new ActionResultDto(true, "Item reported successfully at " + workspaceId, null, null);
     }
 }
