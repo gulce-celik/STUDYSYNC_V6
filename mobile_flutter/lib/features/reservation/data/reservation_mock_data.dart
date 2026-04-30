@@ -1,3 +1,4 @@
+import '../../auth/data/registration_mock_data.dart';
 import '../domain/reservation_models.dart';
 
 /// Mirrors `src/app/data/mockData.ts` for offline UI parity with the Figma/React prototype.
@@ -23,14 +24,9 @@ class ReservationMockData {
     TimeSlot(id: 'slot-8', label: '23:00 - 02:00 (Night)'),
   ];
 
-  static final List<CourseOption> courses = [
-    CourseOption(code: 'CSE344', name: 'Software Engineering'),
-    CourseOption(code: 'CSE331', name: 'Database Systems'),
-    CourseOption(code: 'CSE312', name: 'Operating Systems'),
-    CourseOption(code: 'CSE211', name: 'Data Structures'),
-    CourseOption(code: 'MATH301', name: 'Linear Algebra'),
-    CourseOption(code: 'IE202', name: 'Operations Research'),
-  ];
+  static final List<CourseOption> courses = RegistrationMockData.courses
+      .map((c) => CourseOption(code: c.code, name: c.name))
+      .toList();
 
   static final List<LostItemRef> lostItems = [
     LostItemRef(workspaceId: 'desk-8'),

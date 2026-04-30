@@ -11,9 +11,12 @@ import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.ResponseEntity;
+import com.studysync.domain.dto.ChangePasswordRequestDto;
 
 /**
  * HTTP: POST /api/v1/auth/login
@@ -38,5 +41,13 @@ public class AuthController {
     @GetMapping("/me")
     public UserSummaryDto getMe(@AuthenticationPrincipal UserAccount currentUser) {
         return authService.getCurrentUser(currentUser);
+    }
+
+    @PutMapping("/password")
+    public ResponseEntity<Void> changePassword(
+            @AuthenticationPrincipal UserAccount currentUser,
+            @Valid @RequestBody ChangePasswordRequestDto request) {
+        authService.changePassword(currentUser, request);
+        return ResponseEntity.ok().build();
     }
 }

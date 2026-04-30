@@ -83,4 +83,18 @@ class AuthApi {
     final response = await ApiClient.instance.dio.get<Map<String, dynamic>>('/auth/me');
     return response.data ?? {};
   }
+
+  /// [PUT /auth/password] — Şifre değiştirme endpointi.
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await ApiClient.instance.dio.put<void>(
+      '/auth/password',
+      data: {
+        'currentPassword': currentPassword,
+        'newPassword': newPassword,
+      },
+    );
+  }
 }

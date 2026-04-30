@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../../features/auth/data/registration_mock_data.dart';
 import '../../features/reservation/data/reservation_mock_data.dart';
 import '../../features/schedule/data/schedule_mock_data.dart';
+import '../session/auth_session.dart';
 
 class AiSuggestion {
   const AiSuggestion({
@@ -151,8 +152,8 @@ class AiStudyController extends ChangeNotifier {
         AiSuggestion(
           id: 'ai-fallback',
           title: 'AI suggestion',
-          message: 'Tue 14-15 • Study CSE344 for 2 hours to keep progress steady.',
-          courseCode: 'CSE344',
+          message: 'Tue 14-15 • Study $course for 2 hours to keep progress steady.',
+          courseCode: course,
           slotLabel: '13:00 - 15:00 (Class Time)',
           dateIso: _toIso(fallbackDate),
         ),
@@ -183,11 +184,24 @@ class AiStudyController extends ChangeNotifier {
   }
 
   String _pickCourseCode() {
+    final enrolled = AuthSession.instance.enrolledCourseCodes;
+
+    if (enrolled.isNotEmpty) {
+      if (_courseRatings.isNotEmpty) {
+        final enrolledRatings = _courseRatings.entries.where((e) => enrolled.contains(e.key)).toList();
+        if (enrolledRatings.isNotEmpty) {
+          enrolledRatings.sort((a, b) => a.value.compareTo(b.value));
+          return enrolledRatings.first.key;
+        }
+      }
+      return enrolled.first;
+    }
+
     if (_courseRatings.isNotEmpty) {
-      final sorted = _courseRatings.entries.toList()
-        ..sort((a, b) => a.value.compareTo(b.value));
+      final sorted = _courseRatings.entries.toList()..sort((a, b) => a.value.compareTo(b.value));
       return sorted.first.key;
     }
+    
     for (final b in _scheduleBlocks) {
       final c = _extractCourseCode(b.label);
       if (c != null) return c;

@@ -6,6 +6,7 @@ import '../../../core/trust/responsibility_ledger.dart';
 import '../data/reservation_api.dart';
 import '../data/reservation_mock_data.dart';
 import '../domain/reservation_models.dart';
+import '../../../core/session/auth_session.dart';
 
 enum _DeskFilter { all, individual, group }
 
@@ -115,6 +116,12 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
       return _remoteWorkspaces!;
     }
     return ReservationMockData.workspaces;
+  }
+
+  List<CourseOption> get _userCourses {
+    final enrolled = AuthSession.instance.enrolledCourseCodes;
+    if (enrolled.isEmpty) return ReservationMockData.courses;
+    return ReservationMockData.courses.where((c) => enrolled.contains(c.code)).toList();
   }
 
   Workspace? _workspaceById(String? id) {
@@ -1018,7 +1025,7 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
                       initialValue: _selectedCourse.isEmpty ? null : _selectedCourse,
                       isExpanded: true,
                       hint: const Text('Select course', style: TextStyle(fontSize: 12)),
-                      items: ReservationMockData.courses
+                      items: _userCourses
                           .map(
                             (c) => DropdownMenuItem(
                               value: c.code,

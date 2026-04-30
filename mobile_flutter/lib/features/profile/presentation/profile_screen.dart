@@ -6,6 +6,7 @@ import '../../../core/session/auth_session.dart';
 import '../../../core/trust/responsibility_ledger.dart';
 import '../../../core/theme/theme_mode_controller.dart';
 import '../../auth/data/registration_mock_data.dart';
+import '../../auth/data/auth_api.dart';
 import '../../schedule/presentation/weekly_schedule_screen.dart';
 import '../data/profile_mock_data.dart';
 
@@ -100,7 +101,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 14),
               FilledButton(
-                onPressed: () {
+                onPressed: () async {
                   if (current.text.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter current password')));
                     return;
@@ -113,8 +114,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Passwords do not match')));
                     return;
                   }
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password changed!')));
+
+                  try {
+                    await AuthApi().changePassword(currentPassword: current.text, newPassword: next.text);
+                    if (!ctx.mounted) return;
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password changed successfully!')));
+                  } catch (e) {
+                    if (!ctx.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to change password. Check your current password.')));
+                  }
                 },
                 child: const Text('Save'),
               ),

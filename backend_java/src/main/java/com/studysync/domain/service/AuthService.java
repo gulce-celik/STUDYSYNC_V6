@@ -6,6 +6,7 @@ import com.studysync.domain.dto.LoginRequestDto;
 import com.studysync.domain.dto.LoginResponseDto;
 import com.studysync.domain.dto.RegisterRequestDto;
 import com.studysync.domain.dto.UserSummaryDto;
+import com.studysync.domain.dto.ChangePasswordRequestDto;
 import com.studysync.domain.entity.UserAccount;
 import com.studysync.domain.exception.EmailAlreadyExistsException;
 import com.studysync.domain.exception.InvalidCredentialsException;
@@ -148,5 +149,14 @@ public class AuthService {
                 currentUser.getYear(),
                 currentUser.getResponsibilityScore(),
                 currentUser.getEnrolledCourses());
+    }
+
+    @Transactional
+    public void changePassword(UserAccount currentUser, ChangePasswordRequestDto request) {
+        if (!passwordEncoder.matches(request.currentPassword(), currentUser.getPasswordHash())) {
+            throw new InvalidCredentialsException(); // Can reuse or create new exception
+        }
+        currentUser.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        userAccountRepository.save(currentUser);
     }
 }
