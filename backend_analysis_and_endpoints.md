@@ -56,3 +56,4 @@ The Flutter app *must* attach a generated JWT as a Bearer Token (`Authorization:
 ### 6. System
 - `GET /reference/departments` — Dropdown UI reference list.
 - `GET /health` — Check server pulse/liveness.
+## --------------------------------
