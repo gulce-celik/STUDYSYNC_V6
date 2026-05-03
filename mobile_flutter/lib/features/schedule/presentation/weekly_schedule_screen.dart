@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/planner/ai_study_controller.dart';
+import '../../../core/session/auth_session.dart';
 import '../../auth/data/registration_mock_data.dart';
 import '../data/schedule_api.dart';
 import '../data/schedule_mock_data.dart';
@@ -225,7 +226,11 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
   }
 
   Future<void> _openExamDialog(String day, String time) async {
-    String? selectedCourse = RegistrationMockData.courses.first.code;
+    final enrolled = AuthSession.instance.enrolledCourseCodes;
+    final userCourses = enrolled.isNotEmpty
+        ? RegistrationMockData.courses.where((c) => enrolled.contains(c.code)).toList()
+        : RegistrationMockData.courses.toList();
+    String? selectedCourse = userCourses.isNotEmpty ? userCourses.first.code : null;
     DateTime selectedDate = DateTime.now().add(const Duration(days: 7));
     await showDialog<void>(
       context: context,
@@ -242,8 +247,8 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
                     DropdownButtonFormField<String>(
                     initialValue: selectedCourse,
                     decoration: const InputDecoration(labelText: 'Course', border: OutlineInputBorder()),
-                    items: RegistrationMockData.courses
-                        .map((c) => DropdownMenuItem(value: c.code, child: Text('${c.code} - ${c.name}')))
+                    items: userCourses
+                        .map((c) => DropdownMenuItem(value: c.code, child: Text(c.code)))
                         .toList(),
                     onChanged: (v) => setDialogState(() => selectedCourse = v),
                   ),
