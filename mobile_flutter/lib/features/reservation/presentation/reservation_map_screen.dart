@@ -187,59 +187,31 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
 
   bool _isInstantBookableCell(Workspace ws) {
     if (!ReservationMockData.instantDeskIds.contains(ws.id)) return false;
-    if (_lostAt(ws.id)) return false;
     if (_isBaseOccupied(ws)) return false;
-    if (_selectedDateIso.isNotEmpty && _selectedSlot.isNotEmpty) {
-      if (_dynamicOccupied(ws, _selectedDateIso, _selectedSlot)) return false;
-    }
     return true;
-  }
-
-  bool _dynamicOccupied(Workspace ws, String dateIso, String slotLabel) {
-    if (dateIso.isEmpty || slotLabel.isEmpty) return false;
-    final dayNum = int.tryParse(dateIso.split('-').last) ?? 0;
-    final slotIdx = ReservationMockData.timeSlots.indexWhere((s) => s.label == slotLabel);
-    final deskNum = int.tryParse(ws.id.split('-').last) ?? 0;
-    final seed = (dayNum + slotIdx + deskNum) % 5;
-    return seed == 0 || seed == 1;
   }
 
   Color _fillForWorkspace(Workspace ws) {
     if (_isInstantMapMode) {
       if (_isInstantBookableCell(ws)) return const Color(0xFF60A5FA);
-      if (_lostAt(ws.id)) return const Color(0xFFFBBF24);
       return const Color(0xFFDC2626);
     }
-    if (_lostAt(ws.id)) return const Color(0xFFFBBF24);
     if (ws.status == 'occupied') return const Color(0xFFF87171);
-    if (_selectedDateIso.isNotEmpty && _selectedSlot.isNotEmpty) {
-      if (_dynamicOccupied(ws, _selectedDateIso, _selectedSlot)) {
-        return const Color(0xFFF87171);
-      }
-    }
     return const Color(0xFF60A5FA);
   }
 
   Color _strokeForWorkspace(Workspace ws) {
     if (_isInstantMapMode) {
       if (_isInstantBookableCell(ws)) return const Color(0xFF2563EB);
-      if (_lostAt(ws.id)) return const Color(0xFFD97706);
       return const Color(0xFF7F1D1D);
     }
-    if (_lostAt(ws.id)) return const Color(0xFFD97706);
     if (ws.status == 'occupied') return const Color(0xFFDC2626);
-    if (_selectedDateIso.isNotEmpty && _selectedSlot.isNotEmpty) {
-      if (_dynamicOccupied(ws, _selectedDateIso, _selectedSlot)) {
-        return const Color(0xFFDC2626);
-      }
-    }
     return const Color(0xFF2563EB);
   }
 
   double _opacityForWorkspace(Workspace ws) {
     if (_canReserveAdvance) return 1;
     if (_isInstantBookableCell(ws)) return 1;
-    if (_lostAt(ws.id)) return 0.45;
     return 0.38;
   }
 
@@ -259,9 +231,6 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
     final ws = _workspaceById(workspaceId);
     if (ws == null) return false;
     if (_isBaseOccupied(ws)) return true;
-    if (_selectedDateIso.isNotEmpty && _selectedSlot.isNotEmpty) {
-      return _dynamicOccupied(ws, _selectedDateIso, _selectedSlot);
-    }
     return false;
   }
 
@@ -270,32 +239,25 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
 
   void _onWorkspaceTap(Workspace ws) {
     if (_typeMismatch(ws)) return;
+
+    if (_lostAt(ws.id)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Note: A lost item was reported here.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
+
     if (_isInstantMapMode) {
-      if (_lostAt(ws.id)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Lost item reported at this workspace')),
-        );
-        return;
-      }
       if (!_isInstantBookableCell(ws)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Today only instant desks can be selected — pick a bright blue desk.')),
         );
         return;
       }
-    } else {
-      if (_lostAt(ws.id)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Lost item reported at this workspace')),
-        );
-        return;
-      }
     }
     if (_isBaseOccupied(ws)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('This workspace is occupied')));
-      return;
-    }
-    if (_selectedDateIso.isNotEmpty && _selectedSlot.isNotEmpty && _dynamicOccupied(ws, _selectedDateIso, _selectedSlot)) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('This workspace is occupied')));
       return;
     }
@@ -622,12 +584,28 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
           const SizedBox(width: 4),
           Text('Not open', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade700)),
           const SizedBox(width: 10),
-          dot(
-            const Color(0xFFFBBF24).withValues(alpha: 0.45),
-            const Color(0xFFD97706).withValues(alpha: 0.5),
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFBBF24),
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFFD97706)),
+            ),
+            child: const Center(
+              child: Text(
+                '!',
+                style: TextStyle(
+                  fontSize: 7,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF854D0E),
+                  height: 1.1,
+                ),
+              ),
+            ),
           ),
           const SizedBox(width: 4),
-          Text('Lost', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade700)),
+          Text('Lost Item', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade700)),
         ],
       );
     }
@@ -641,9 +619,28 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
         const SizedBox(width: 4),
         Text('Busy', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade700)),
         const SizedBox(width: 10),
-        dot(const Color(0xFFFBBF24), const Color(0xFFD97706)),
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFBBF24),
+            shape: BoxShape.circle,
+            border: Border.all(color: const Color(0xFFD97706)),
+          ),
+          child: const Center(
+            child: Text(
+              '!',
+              style: TextStyle(
+                fontSize: 7,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF854D0E),
+                height: 1.1,
+              ),
+            ),
+          ),
+        ),
         const SizedBox(width: 4),
-        Text('Lost', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade700)),
+        Text('Lost Item', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade700)),
       ],
     );
   }
@@ -714,44 +711,76 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
                       opacity: op,
                       child: GestureDetector(
                         onTap: blocked ? null : () => _onWorkspaceTap(ws),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 120),
-                          decoration: BoxDecoration(
-                            color: _fillForWorkspace(ws),
-                            borderRadius: BorderRadius.circular(ws.type == 'individual' ? 3 : 6),
-                            border: Border.all(
-                              color: _strokeForWorkspace(ws),
-                              width: selected ? 3 : 2,
-                            ),
-                          ),
-                          child: Center(
-                            child: ws.type == 'individual'
-                                ? Text(
-                                    ws.id.split('-').last,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 11,
-                                    ),
-                                  )
-                                : Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        ws.id,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 10,
-                                        ),
-                                      ),
-                                      Text(
-                                        'Cap: ${ws.capacity}',
-                                        style: const TextStyle(color: Colors.white, fontSize: 9),
-                                      ),
-                                    ],
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Positioned.fill(
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 120),
+                                decoration: BoxDecoration(
+                                  color: _fillForWorkspace(ws),
+                                  borderRadius: BorderRadius.circular(ws.type == 'individual' ? 3 : 6),
+                                  border: Border.all(
+                                    color: _strokeForWorkspace(ws),
+                                    width: selected ? 3 : 2,
                                   ),
-                          ),
+                                ),
+                                child: Center(
+                                  child: ws.type == 'individual'
+                                      ? Text(
+                                          ws.id.split('-').last,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 11,
+                                          ),
+                                        )
+                                      : Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Text(
+                                              ws.id,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 10,
+                                              ),
+                                            ),
+                                            Text(
+                                              'Cap: ${ws.capacity}',
+                                              style: const TextStyle(color: Colors.white, fontSize: 9),
+                                            ),
+                                          ],
+                                        ),
+                                ),
+                              ),
+                            ),
+                            if (_lostAt(ws.id))
+                              Positioned(
+                                top: -4,
+                                right: -4,
+                                child: Container(
+                                  width: 14,
+                                  height: 14,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFBBF24),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: const Color(0xFFD97706)),
+                                  ),
+                                  child: const Center(
+                                    child: Text(
+                                      '!',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF854D0E),
+                                        height: 1.1,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ),

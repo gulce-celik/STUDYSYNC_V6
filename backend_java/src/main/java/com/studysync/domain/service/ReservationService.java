@@ -75,10 +75,25 @@ public class ReservationService {
         this.objectMapper = objectMapper;
     }
 
+    private List<WorkspaceDto> generateWorkspaces() {
+        List<WorkspaceDto> list = new java.util.ArrayList<>();
+        for (int i = 0; i < 24; i++) {
+            list.add(new WorkspaceDto("desk-" + (i + 1), "individual", 1, "available", 12 + (i % 8) * 40, 35 + (i / 8) * 65));
+        }
+        list.add(new WorkspaceDto("group-1", "group", 4, "available", 12, 265));
+        list.add(new WorkspaceDto("group-2", "group", 4, "available", 89, 265));
+        list.add(new WorkspaceDto("group-3", "group", 6, "available", 166, 265));
+        list.add(new WorkspaceDto("group-4", "group", 4, "available", 243, 265));
+        return list;
+    }
+
     public List<WorkspaceDto> getWorkspaces(String date, String slotId, String type) {
-        // Antigravity Modification: Reverted to empty list so Flutter app uses its
-        // built-in Mock Workspaces.
-        return List.of();
+        List<WorkspaceDto> all = generateWorkspaces();
+        return all.stream().map(ws -> {
+            boolean occupied = reservationRepository.existsByWorkspaceIdAndDateAndSlotIdAndStatusIn(
+                    ws.id(), date, slotId, List.of("ACTIVE", "PENDING", "COMPLETED"));
+            return new WorkspaceDto(ws.id(), ws.type(), ws.capacity(), occupied ? "occupied" : "available", ws.x(), ws.y());
+        }).collect(Collectors.toList());
     }
 
     public ReservationDetailDto createReservation(CreateReservationRequestDto request) {

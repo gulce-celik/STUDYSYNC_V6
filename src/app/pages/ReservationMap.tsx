@@ -67,26 +67,8 @@ export default function ReservationMap() {
   });
 
   const getWorkspaceColor = (workspace: typeof workspaces[0]) => {
-    const lostItem = mockLostItems.find(item => item.workspaceId === workspace.id);
-    if (lostItem) return 'fill-yellow-400 stroke-yellow-600';
-    
     // Base occupied status (always red)
     if (workspace.status === 'occupied') return 'fill-red-400 stroke-red-600';
-    
-    // Dynamic color based on selected date and slot
-    if (selectedDate && selectedSlot) {
-      // Simulate occupied workspaces based on date and time slot
-      // Use deterministic logic so colors don't change on every render
-      const dateNum = parseInt(selectedDate.split('-')[2]); // Day of month
-      const slotNum = timeSlots.findIndex(s => s.label === selectedSlot);
-      const workspaceNum = parseInt(workspace.id.split('-')[1] || '0');
-      
-      // Deterministic "random" - specific workspaces are occupied for specific date+time combos
-      const seed = (dateNum + slotNum + workspaceNum) % 5;
-      const isOccupied = seed === 0 || seed === 1; // 40% chance, but consistent
-      
-      if (isOccupied) return 'fill-red-400 stroke-red-600';
-    }
     
     return 'fill-blue-400 stroke-blue-600';
   };
@@ -120,16 +102,6 @@ export default function ReservationMap() {
     
     // Check if workspace is occupied (base status)
     if (ws.status === 'occupied') return true;
-    
-    // Check dynamic occupied status (must match getWorkspaceColor logic)
-    if (selectedDate && selectedSlot) {
-      const dateNum = parseInt(selectedDate.split('-')[2]);
-      const slotNum = timeSlots.findIndex(s => s.label === selectedSlot);
-      const workspaceNum = parseInt(workspaceId.split('-')[1] || '0');
-      
-      const seed = (dateNum + slotNum + workspaceNum) % 5;
-      return seed === 0 || seed === 1;
-    }
     
     return false;
   };
@@ -218,18 +190,16 @@ export default function ReservationMap() {
     
     if (isDisabled) return;
     
-    // Check for lost items first
+    // Check for lost items
     const lostItem = mockLostItems.find(item => item.workspaceId === workspace.id);
     if (lostItem) {
-      toast.error('⚠️ Lost item found here!');
-      return;
+      toast.info('⚠️ Note: A lost item was reported here.', { duration: 3000 });
     }
     
-    // Check if workspace is occupied (base status or dynamic with date/time)
+    // Check if workspace is occupied (base status)
     const isBaseOccupied = workspace.status === 'occupied';
-    const isDynamicOccupied = selectedDate && selectedSlot && getWorkspaceColor(workspace).includes('red');
     
-    if (isBaseOccupied || isDynamicOccupied) {
+    if (isBaseOccupied) {
       toast.error('🚫 This workspace is occupied!');
       return;
     }
@@ -329,9 +299,9 @@ export default function ReservationMap() {
               <div className="w-2 h-2 bg-red-400 border border-red-600 rounded"></div>
               <span className="text-gray-600">Busy</span>
             </div>
-            <div className="flex items-center space-x-0.5">
-              <div className="w-2 h-2 bg-yellow-400 border border-yellow-600 rounded"></div>
-              <span className="text-gray-600">Lost</span>
+            <div className="flex items-center space-x-1">
+              <div className="w-3 h-3 bg-yellow-400 border border-yellow-600 rounded-full flex items-center justify-center text-[8px] font-bold text-yellow-800">!</div>
+              <span className="text-gray-600">Lost Item</span>
             </div>
           </div>
 
@@ -376,6 +346,12 @@ export default function ReservationMap() {
                       >
                         {workspace.id.split('-')[1]}
                       </text>
+                      {lostItem && (
+                        <g transform={`translate(${workspace.x + 35}, ${workspace.y})`}>
+                          <circle cx="0" cy="0" r="6" fill="#facc15" stroke="#ca8a04" strokeWidth="1" />
+                          <text x="0" y="3" textAnchor="middle" fill="#854d0e" fontSize="9" fontWeight="bold" className="pointer-events-none">!</text>
+                        </g>
+                      )}
                     </g>
                   );
                 } else {
@@ -410,6 +386,12 @@ export default function ReservationMap() {
                       >
                         Cap: {workspace.capacity}
                       </text>
+                      {lostItem && (
+                        <g transform={`translate(${workspace.x + 70}, ${workspace.y})`}>
+                          <circle cx="0" cy="0" r="7" fill="#facc15" stroke="#ca8a04" strokeWidth="1" />
+                          <text x="0" y="3.5" textAnchor="middle" fill="#854d0e" fontSize="10" fontWeight="bold" className="pointer-events-none">!</text>
+                        </g>
+                      )}
                     </g>
                   );
                 }
@@ -422,7 +404,7 @@ export default function ReservationMap() {
             <p className="text-[10px] text-gray-700 leading-snug text-center mb-2">
               <span className="font-bold text-blue-700">Bright</span> = Available · 
               <span className="font-bold text-red-600"> Red</span> = Occupied · 
-              <span className="font-bold text-yellow-600"> Yellow</span> = Lost item
+              <span className="font-bold text-yellow-600"> ⚠️ Icon</span> = Lost item
             </p>
             <div className="border-t border-blue-200 pt-2">
               <p className="text-[9px] text-gray-600 leading-relaxed">

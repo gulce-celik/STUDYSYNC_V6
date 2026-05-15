@@ -253,6 +253,63 @@ public class DevDataInitializer {
 
                 userRepository.saveAll(List.of(alice, bob, charlie));
 
+                if (reservationRepository.count() == 0) {
+                    java.time.LocalDate today = java.time.LocalDate.now();
+                    java.time.LocalDate tomorrow = today.plusDays(1);
+
+                    ReservationRecord r1 = new ReservationRecord();
+                    r1.setUser(alice);
+                    r1.setWorkspaceId("desk-5");
+                    r1.setDate(today.toString());
+                    r1.setSlotId("slot-3");
+                    r1.setSlotLabel("11.00-13.00");
+                    r1.setStatus("ACTIVE");
+                    r1.setCourseCode("CSE344");
+                    r1.setQrPayload("QR_" + System.currentTimeMillis() + "_1");
+
+                    ReservationRecord r2 = new ReservationRecord();
+                    r2.setUser(bob);
+                    r2.setWorkspaceId("group-2");
+                    r2.setDate(today.toString());
+                    r2.setSlotId("slot-3");
+                    r2.setSlotLabel("11.00-13.00");
+                    r2.setStatus("ACTIVE");
+                    r2.setCourseCode("MATH131");
+                    r2.setQrPayload("QR_" + System.currentTimeMillis() + "_2");
+                    r2.setParticipantsJson("[\"Alice\"]");
+
+                    ReservationRecord r3 = new ReservationRecord();
+                    r3.setUser(alice);
+                    r3.setWorkspaceId("desk-12");
+                    r3.setDate(tomorrow.toString());
+                    r3.setSlotId("slot-5");
+                    r3.setSlotLabel("15.00-17.00");
+                    r3.setStatus("ACTIVE");
+                    r3.setCourseCode("CSE331");
+                    r3.setQrPayload("QR_" + System.currentTimeMillis() + "_3");
+
+                    ReservationRecord r4 = new ReservationRecord();
+                    r4.setUser(charlie);
+                    r4.setWorkspaceId("desk-1");
+                    r4.setDate(today.toString());
+                    r4.setSlotId("slot-2");
+                    r4.setSlotLabel("09.00-11.00");
+                    r4.setStatus("ACTIVE");
+                    r4.setCourseCode("MATH221");
+                    r4.setQrPayload("QR_" + System.currentTimeMillis() + "_4");
+
+                    ReservationRecord r5 = new ReservationRecord();
+                    r5.setUser(charlie);
+                    r5.setWorkspaceId("desk-7");
+                    r5.setDate(today.toString());
+                    r5.setSlotId("slot-3");
+                    r5.setSlotLabel("11.00-13.00");
+                    r5.setStatus("ACTIVE");
+                    r5.setCourseCode("MATH281");
+                    r5.setQrPayload("QR_" + System.currentTimeMillis() + "_5");
+
+                    reservationRepository.saveAll(List.of(r1, r2, r3, r4, r5));
+                }
             }
         };
     }
