@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { courses } from '../data/mockData';
+import { courses, currentUser } from '../data/mockData';
 import { Star, TrendingUp, BookOpen, Search } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -141,12 +141,18 @@ export default function CourseRating() {
 
                   {/* Rate Button / Rating Interface */}
                   {!isRating ? (
-                    <button
-                      onClick={() => setRatingCourse(course.id)}
-                      className="w-full px-4 py-2.5 bg-yellow-500 text-white rounded-xl font-bold text-sm active:scale-95 transition-transform"
-                    >
-                      Rate This Course
-                    </button>
+                    currentUser.courses?.includes(course.code) ? (
+                      <button
+                        onClick={() => setRatingCourse(course.id)}
+                        className="w-full px-4 py-2.5 bg-yellow-500 text-white rounded-xl font-bold text-sm active:scale-95 transition-transform"
+                      >
+                        Rate This Course
+                      </button>
+                    ) : (
+                      <div className="w-full px-4 py-2.5 bg-gray-100 text-gray-500 text-center rounded-xl font-semibold text-sm">
+                        You must be enrolled to rate
+                      </div>
+                    )
                   ) : (
                     <div className="bg-gray-50 p-3 rounded-xl">
                       <p className="text-sm font-bold text-gray-900 mb-3 text-center">

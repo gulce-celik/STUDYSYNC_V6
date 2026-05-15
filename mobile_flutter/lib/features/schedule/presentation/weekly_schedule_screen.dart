@@ -146,9 +146,9 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
                 title: 'Lesson',
                 subtitle: 'Class schedule',
                 color: const Color(0xFFEF4444),
-                onTap: () {
-                  _setBlock(day, time, ScheduleBlockType.lesson, 'Lesson');
+                onTap: () async {
                   Navigator.pop(ctx);
+                  await _openLessonDialog(day, time);
                 },
               ),
               _typeTile(
@@ -223,6 +223,70 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
     });
     AiStudyController.instance.updateSchedule(_blocks);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$day $time → $label')));
+  }
+
+  Future<void> _openLessonDialog(String day, String time) async {
+    final enrolled = AuthSession.instance.enrolledCourseCodes;
+    final userCourses = enrolled.isNotEmpty
+        ? RegistrationMockData.courses.where((c) => enrolled.contains(c.code)).toList()
+        : RegistrationMockData.courses.toList();
+    String? selectedCourse = userCourses.isNotEmpty ? userCourses.first.code : null;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Add Lesson'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedCourse,
+                      decoration: const InputDecoration(labelText: 'Course', border: OutlineInputBorder()),
+                      items: userCourses
+                          .map((c) => DropdownMenuItem(value: c.code, child: Text(c.code)))
+                          .toList(),
+                      onChanged: (v) => setDialogState(() => selectedCourse = v),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                FilledButton(
+                  onPressed: () {
+                    final code = selectedCourse;
+                    if (code == null || code.isEmpty) return;
+                    setState(() {
+                      _blocks.removeWhere((b) => b.day == day && b.timeSlot == time);
+                      _blocks.add(
+                        ScheduleBlock(
+                          day: day,
+                          timeSlot: time,
+                          type: ScheduleBlockType.lesson,
+                          label: code,
+                          courseCode: code,
+                        ),
+                      );
+                      _purgePastExams();
+                    });
+                    AiStudyController.instance.updateSchedule(_blocks);
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('$day $time → Lesson ($code)')),
+                    );
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _openExamDialog(String day, String time) async {

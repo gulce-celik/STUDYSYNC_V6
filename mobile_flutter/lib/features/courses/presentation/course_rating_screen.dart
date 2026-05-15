@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/planner/ai_study_controller.dart';
+import '../../../core/session/auth_session.dart';
 import '../data/course_api.dart';
 
 /// Figma / React `CourseRating.tsx` — arama, zorluk yıldızı, konu etiketleri, oylama.
@@ -283,20 +284,30 @@ class _CourseRatingScreenState extends State<CourseRatingScreen> {
                           if (!isRating)
                             SizedBox(
                               width: double.infinity,
-                              child: FilledButton(
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: const Color(0xFFEAB308),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                onPressed: () => setState(() {
-                                  _ratingCourseId = course.id;
-                                  _userRating = 0;
-                                  _comment.clear();
-                                }),
-                                child: const Text('Rate This Course', style: TextStyle(fontWeight: FontWeight.w800)),
-                              ),
+                              child: AuthSession.instance.enrolledCourseCodes.contains(course.code)
+                                ? FilledButton(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: const Color(0xFFEAB308),
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    ),
+                                    onPressed: () => setState(() {
+                                      _ratingCourseId = course.id;
+                                      _userRating = 0;
+                                      _comment.clear();
+                                    }),
+                                    child: const Text('Rate This Course', style: TextStyle(fontWeight: FontWeight.w800)),
+                                  )
+                                : Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF3F4F6),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Text('You must be enrolled to rate', style: TextStyle(color: Color(0xFF9CA3AF), fontWeight: FontWeight.w600, fontSize: 13)),
+                                  ),
                             )
                           else ...[
                             const Text('Your rating', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),

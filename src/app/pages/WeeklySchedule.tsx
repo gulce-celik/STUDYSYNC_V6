@@ -8,6 +8,7 @@ export default function WeeklySchedule() {
   const navigate = useNavigate();
   const [schedule, setSchedule] = useState(userWeeklySchedule);
   const [showModal, setShowModal] = useState(false);
+  const [showCourseSelect, setShowCourseSelect] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<{ day: string; time: string } | null>(null);
   const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
   const [courses, setCourses] = useState([
@@ -55,7 +56,8 @@ export default function WeeklySchedule() {
         timeSlot: selectedSlot.time,
         type,
         courseName: type === 'lesson' && selectedCourse ? courses.find(c => c.code === selectedCourse)?.name || '' : undefined,
-        courseCode: type === 'lesson' ? selectedCourse : undefined,
+        courseCode: type === 'lesson' && selectedCourse ? selectedCourse : undefined,
+        label: type === 'lesson' && selectedCourse ? selectedCourse : undefined,
       };
 
       setSchedule([...schedule, newBlock]);
@@ -65,6 +67,7 @@ export default function WeeklySchedule() {
     }
 
     setShowModal(false);
+    setShowCourseSelect(false);
     setSelectedSlot(null);
     setSelectedCourse(null);
   };
@@ -180,23 +183,57 @@ export default function WeeklySchedule() {
               </h3>
               <p className="text-xs text-gray-600">Select block type</p>
             </div>
-            
-            <div className="p-3 space-y-2">
-              <button
-                onClick={() => handleTypeSelect('lesson')}
-                className="w-full flex items-center space-x-3 p-3 rounded-xl bg-red-50 border-2 border-red-200 active:scale-95 transition-transform"
-              >
-                <div className="w-8 h-8 bg-red-500 rounded-lg flex items-center justify-center">
-                  <BookOpen className="w-4 h-4 text-white" />
-                </div>
-                <div className="flex-1 text-left">
-                  <div className="font-bold text-sm text-gray-900">Lesson</div>
-                  <div className="text-[10px] text-gray-600">Class schedule</div>
-                </div>
-              </button>
 
-              <button
-                onClick={() => handleTypeSelect('club')}
+            <div className="p-3 space-y-2">
+              {showCourseSelect ? (
+                <div className="space-y-3 bg-red-50 p-3 rounded-xl border-2 border-red-200">
+                  <div className="font-bold text-sm text-gray-900">Select Enrolled Course</div>
+                  <select
+                    className="w-full p-2 rounded-lg border border-red-200"
+                    value={selectedCourse || courses[0]?.code}
+                    onChange={(e) => setSelectedCourse(e.target.value)}
+                  >
+                    {courses.map(c => (
+                      <option key={c.code} value={c.code}>{c.code} - {c.name}</option>
+                    ))}
+                  </select>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => setShowCourseSelect(false)}
+                      className="flex-1 py-2 bg-gray-200 rounded-lg text-sm font-bold"
+                    >
+                      Back
+                    </button>
+                    <button
+                      onClick={() => handleTypeSelect('lesson')}
+                      className="flex-1 py-2 bg-red-500 text-white rounded-lg text-sm font-bold"
+                    >
+                      Save Lesson
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    setShowCourseSelect(true);
+                    if (!selectedCourse) setSelectedCourse(courses[0]?.code);
+                  }}
+                  className="w-full flex items-center space-x-3 p-3 rounded-xl bg-red-50 border-2 border-red-200 active:scale-95 transition-transform"
+                >
+                  <div className="w-8 h-8 bg-red-500 rounded-lg flex items-center justify-center">
+                    <BookOpen className="w-4 h-4 text-white" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <div className="font-bold text-sm text-gray-900">Lesson</div>
+                    <div className="text-[10px] text-gray-600">Class schedule</div>
+                  </div>
+                </button>
+              )}
+
+              {!showCourseSelect && (
+                <>
+                  <button
+                    onClick={() => handleTypeSelect('club')}
                 className="w-full flex items-center space-x-3 p-3 rounded-xl bg-purple-50 border-2 border-purple-200 active:scale-95 transition-transform"
               >
                 <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center">
@@ -233,12 +270,15 @@ export default function WeeklySchedule() {
                   <div className="text-[10px] text-gray-600">Remove block</div>
                 </div>
               </button>
+                </>
+              )}
             </div>
 
             <div className="p-3 border-t border-gray-200">
               <button
                 onClick={() => {
                   setShowModal(false);
+                  setShowCourseSelect(false);
                   setSelectedSlot(null);
                 }}
                 className="w-full py-3 bg-gray-100 text-gray-900 rounded-xl font-bold active:scale-95 transition-transform"
