@@ -5,7 +5,10 @@ import 'package:flutter/material.dart';
 
 import '../../../core/auth/auth_scope.dart';
 import '../../../core/platform/keyboard_host.dart';
+import '../auth_email_utils.dart';
 import '../data/auth_api.dart';
+import '../../admin/presentation/admin_login_screen.dart';
+import 'forgot_password_screen.dart';
 import 'register_screen.dart';
 
 /// Matches Figma/React prototype: gradient hero, rounded card, Yeditepe email rule.
@@ -24,16 +27,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _loading = false;
   String? _emailError;
 
-  static final _yeditepeEmail = RegExp(r'^[a-zA-Z0-9._%+-]+@std\.yeditepe\.edu\.tr$');
-
-  /// Common typo: trailing dot after domain (e.g. `...edu.`).
-  String _normalizeEmail(String raw) {
-    var s = raw.trim();
-    while (s.endsWith('.')) {
-      s = s.substring(0, s.length - 1);
-    }
-    return s;
-  }
+  String _normalizeEmail(String raw) => AuthEmailUtils.normalize(raw);
 
   void _toast(String message) { // snackbar is used to show a message to the user.
     ScaffoldMessenger.of(context).clearSnackBars();
@@ -86,7 +80,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _emailError = null);
 
-    if (!_yeditepeEmail.hasMatch(email)) {
+    if (!AuthEmailUtils.isValidYeditepeEmail(email)) {
       setState(() {
         _emailError = 'Use full address: ...@std.yeditepe.edu.tr (no trailing dot)';
       });
@@ -100,7 +94,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _loading = true);
     try {
-      final result = await AuthApi().login(email: email, password: password); //API call to logiN
+      final result = await AuthApi().login(email: email, password: password);
       if (!mounted) return;
       AuthScope.of(context).establishSession(
         accessToken: result.accessToken,
@@ -109,7 +103,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       _toast(_welcomeWithName(result.user));
     } on DioException catch (e) {
-      if (!mounted) return; //mounted is used to check if the widget is still in the tree.
+      if (!mounted) return;
       _toast(_loginErrorMessage(e));
     } catch (e) {
       if (!mounted) return;
@@ -353,9 +347,17 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 18),
                       Center(
                         child: TextButton(
-                          onPressed: () {
-                            _toast('Password reset flow — coming soon');
-                          },
+                          onPressed: _loading
+                              ? null
+                              : () {
+                                  Navigator.of(context).push<void>(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => ForgotPasswordScreen(
+                                        initialEmail: _normalizeEmail(_emailCtrl.text),
+                                      ),
+                                    ),
+                                  );
+                                },
                           child: const Text(
                             'Forgot password?',
                             style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF2563EB)),
@@ -387,7 +389,26 @@ class _LoginScreenState extends State<LoginScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: _loading
+                      ? null
+                      : () {
+                          Navigator.of(context).push<void>(
+                            MaterialPageRoute<void>(builder: (_) => const AdminLoginScreen()),
+                          );
+                        },
+                  child: Text(
+                    'Staff admin portal',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white.withValues(alpha: 0.95),
+                      decoration: TextDecoration.underline,
+                      decorationColor: Colors.white.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),

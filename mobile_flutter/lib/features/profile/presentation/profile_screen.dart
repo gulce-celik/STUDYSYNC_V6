@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/auth/auth_scope.dart';
@@ -7,8 +8,8 @@ import '../../../core/trust/responsibility_ledger.dart';
 import '../../../core/theme/theme_mode_controller.dart';
 import '../../auth/data/registration_mock_data.dart';
 import '../../auth/data/auth_api.dart';
-import '../../schedule/presentation/weekly_schedule_screen.dart';
 import '../data/profile_mock_data.dart';
+import 'edit_enrolled_courses_sheet.dart';
 
 /// Figma / React `Profile.tsx` — gradient header, courses, nickname, buddy prefs, score history, links.
 class ProfileScreen extends StatefulWidget {
@@ -61,77 +62,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _passwordSheet() {
-    final current = TextEditingController();
-    final next = TextEditingController();
-    final confirm = TextEditingController();
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      isDismissible: true,
+      enableDrag: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.viewInsetsOf(ctx).bottom,
-            left: 16,
-            right: 16,
-            top: 16,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text('Change password', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: current,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: 'Current password', border: OutlineInputBorder()),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: next,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: 'New password (6+ chars)', border: OutlineInputBorder()),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: confirm,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: 'Confirm', border: OutlineInputBorder()),
-              ),
-              const SizedBox(height: 14),
-              FilledButton(
-                onPressed: () async {
-                  if (current.text.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter current password')));
-                    return;
-                  }
-                  if (next.text.length < 6) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password must be 6+ chars')));
-                    return;
-                  }
-                  if (next.text != confirm.text) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Passwords do not match')));
-                    return;
-                  }
-
-                  try {
-                    await AuthApi().changePassword(currentPassword: current.text, newPassword: next.text);
-                    if (!ctx.mounted) return;
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password changed successfully!')));
-                  } catch (e) {
-                    if (!ctx.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to change password. Check your current password.')));
-                  }
-                },
-                child: const Text('Save'),
-              ),
-              const SizedBox(height: 20),
-            ],
-          ),
-        );
-      },
+      builder: (sheetContext) => _ChangePasswordSheet(
+        onSuccess: () {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Password changed successfully!')),
+          );
+        },
+      ),
     );
   }
 
@@ -347,10 +291,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         children: [
                           const Text('My Courses', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
                           TextButton.icon(
-                            onPressed: () => Navigator.of(context).push<void>(
-                                  MaterialPageRoute<void>(builder: (_) => const WeeklyScheduleScreen()),
-                                ),
-                            icon: const Icon(Icons.calendar_view_week_rounded, size: 14),
+                            onPressed: () => showEditEnrolledCoursesSheet(
+                              context: context,
+                              onSaved: () {
+                                if (!mounted) return;
+                                setState(() {});
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Courses updated for this session.'),
+                                  ),
+                                );
+                              },
+                            ),
+                            icon: const Icon(Icons.edit_rounded, size: 14),
                             label: const Text('Edit', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11)),
                           ),
                         ],
@@ -795,6 +748,185 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Change-password sheet; feedback stays on the modal (not behind it).
+class _ChangePasswordSheet extends StatefulWidget {
+  const _ChangePasswordSheet({required this.onSuccess});
+
+  final VoidCallback onSuccess;
+
+  @override
+  State<_ChangePasswordSheet> createState() => _ChangePasswordSheetState();
+}
+
+class _ChangePasswordSheetState extends State<_ChangePasswordSheet> {
+  final _current = TextEditingController();
+  final _next = TextEditingController();
+  final _confirm = TextEditingController();
+
+  bool _loading = false;
+  String? _inlineMessage;
+  bool _isError = false;
+
+  @override
+  void dispose() {
+    _current.dispose();
+    _next.dispose();
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  void _setMessage(String text, {required bool isError}) {
+    setState(() {
+      _inlineMessage = text;
+      _isError = isError;
+    });
+  }
+
+  String _apiErrorMessage(Object e) {
+    if (e is DioException) {
+      final status = e.response?.statusCode;
+      if (status == 401 || status == 400) {
+        return 'Current password is incorrect.';
+      }
+      final data = e.response?.data;
+      if (data is Map && data['message'] != null) {
+        return data['message'].toString();
+      }
+    }
+    return 'Could not change password. Check your connection and try again.';
+  }
+
+  Future<void> _save() async {
+    if (_loading) return;
+
+    setState(() {
+      _inlineMessage = null;
+      _isError = false;
+    });
+
+    if (_current.text.isEmpty) {
+      _setMessage('Enter your current password.', isError: true);
+      return;
+    }
+    if (_next.text.length < 6) {
+      _setMessage('New password must be at least 6 characters.', isError: true);
+      return;
+    }
+    if (_next.text != _confirm.text) {
+      _setMessage('New password and confirmation do not match.', isError: true);
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      await AuthApi().changePassword(
+        currentPassword: _current.text,
+        newPassword: _next.text,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      widget.onSuccess();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _inlineMessage = _apiErrorMessage(e);
+        _isError = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.viewInsetsOf(context).bottom,
+        left: 16,
+        right: 16,
+        top: 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Change password',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+              ),
+              IconButton(
+                onPressed: _loading ? null : () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close_rounded),
+                tooltip: 'Close',
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _current,
+            obscureText: true,
+            enabled: !_loading,
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(
+              labelText: 'Current password',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _next,
+            obscureText: true,
+            enabled: !_loading,
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(
+              labelText: 'New password (6+ chars)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _confirm,
+            obscureText: true,
+            enabled: !_loading,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _save(),
+            decoration: const InputDecoration(
+              labelText: 'Confirm new password',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          if (_inlineMessage != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              _inlineMessage!,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: _isError ? const Color(0xFFDC2626) : const Color(0xFF15803D),
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
+          FilledButton(
+            onPressed: _loading ? null : _save,
+            child: _loading
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const Text('Save'),
+          ),
+          const SizedBox(height: 20),
+        ],
       ),
     );
   }

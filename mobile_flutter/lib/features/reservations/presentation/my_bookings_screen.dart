@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/network/dashboard_api.dart';
 import '../../../core/trust/responsibility_ledger.dart';
+import '../../../shared/check_in/reservation_check_in_sheet.dart';
 import '../../reservation/data/reservation_api.dart';
 import '../../reservation/domain/reservation_models.dart';
 import '../data/bookings_mock_data.dart';
@@ -21,9 +22,10 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
   final _dashboardApi = DashboardApi();
 
   List<ReservationDetail>? _all;
-  final Set<String> _demoCheckedInIds = <String>{};
   bool _loading = true;
   _BookingsTab _tab = _BookingsTab.active;
+
+  bool get _usingOfflineMock => _all == null;
 
   @override
   void initState() {
@@ -61,7 +63,10 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
     return s == 'COMPLETED' || s == 'CANCELLED' || s == 'NO_SHOW';
   }
 
-  bool _isCheckedIn(ReservationDetail r) => r.checkedIn || _demoCheckedInIds.contains(r.id);
+  bool _isCheckedIn(ReservationDetail r) {
+    final s = r.status.toUpperCase();
+    return r.checkedIn || s == 'COMPLETED';
+  }
 
   List<ReservationDetail> get _visible {
     if (_all == null) return BookingsMockData.sampleBookings(); // Show mock ONLY if error occurred
@@ -147,36 +152,26 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
     }
   }
 
-  Future<void> _showQrSheet(ReservationDetail r) async {
-    final payload = r.qrPayload ?? 'DEMO-QR-${r.id}';
-    await showModalBottomSheet<void>(
+  void _openCheckIn(ReservationDetail r) {
+    if (_usingOfflineMock) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Check-in needs a live backend. Start the API and pull to refresh.'),
+        ),
+      );
+      return;
+    }
+
+    showReservationCheckInSheet(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('QR Check-In', style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 8),
-              Text('Payload: $payload', style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280))),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: () {
-                  if (!mounted) return;
-                  setState(() => _demoCheckedInIds.add(r.id));
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Demo mode: check-in simulated successfully.')),
-                  );
-                },
-                child: const Text('Mark as Checked-In (Demo)'),
-              ),
-            ],
-          ),
+      reservation: r,
+      onSuccess: () async {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Check-in successful!')),
         );
+        await _syncResponsibilityFromDashboard();
+        await _load();
       },
     );
   }
@@ -263,9 +258,29 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                       ),
                       const SizedBox(height: 12),
                       if (_visible.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Text('No bookings in this tab.', textAlign: TextAlign.center),
+                        Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            children: [
+                              Icon(Icons.event_busy_rounded, size: 40, color: Colors.grey.shade400),
+                              const SizedBox(height: 12),
+                              Text(
+                                _usingOfflineMock
+                                    ? 'Could not load bookings from the server.'
+                                    : 'No bookings in this tab.',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                              ),
+                              if (!_usingOfflineMock) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Create a reservation from the map, or sign in with a backend account that already has bookings.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(fontSize: 12, height: 1.4, color: Colors.grey.shade600),
+                                ),
+                              ],
+                            ],
+                          ),
                         )
                       else
                         ..._visible.map((r) {
@@ -336,7 +351,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                                       children: [
                                         Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A), size: 18),
                                         SizedBox(width: 6),
-                                        Text('Checked in (Demo)', style: TextStyle(fontSize: 12, color: Color(0xFF15803D))),
+                                        Text('Checked in', style: TextStyle(fontSize: 12, color: Color(0xFF15803D))),
                                       ],
                                     ),
                                   ],
@@ -346,7 +361,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                                       if (_isActiveTab(r) && !_isCheckedIn(r))
                                         Expanded(
                                           child: OutlinedButton.icon(
-                                            onPressed: () => _showQrSheet(r),
+                                            onPressed: () => _openCheckIn(r),
                                             icon: const Icon(Icons.qr_code_scanner_rounded, size: 18),
                                             label: const Text('QR Check-In'),
                                           ),

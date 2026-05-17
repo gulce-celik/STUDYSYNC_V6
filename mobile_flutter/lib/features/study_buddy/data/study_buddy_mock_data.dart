@@ -45,7 +45,7 @@ class StudyBuddyMockData {
   static const List<StudyBuddyMockRow> buddies = [
     StudyBuddyMockRow(
       userId: 'user-2',
-      name: 'Michael Chen',
+      name: 'Emre Y.',
       matchScore: 95,
       commonCourses: ['CSE344'],
       commonTopics: ['Software Design', 'UML Diagrams'],
@@ -58,7 +58,7 @@ class StudyBuddyMockData {
     ),
     StudyBuddyMockRow(
       userId: 'user-3',
-      name: 'Emma Williams',
+      name: 'Gülce K.',
       matchScore: 88,
       commonCourses: ['CSE344', 'CSE331'],
       commonTopics: ['Requirements Analysis', 'SQL'],
@@ -71,7 +71,7 @@ class StudyBuddyMockData {
     ),
     StudyBuddyMockRow(
       userId: 'user-4',
-      name: 'Deniz Aydın',
+      name: 'Efe T.',
       matchScore: 82,
       commonCourses: ['CSE344', 'CSE211'],
       commonTopics: ['Algorithms', 'Pseudocode'],

@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
+import '../../../core/demo/buddy_interaction_log.dart';
 import '../../../core/planner/ai_study_controller.dart';
 import '../../../core/session/auth_session.dart';
 import '../../../core/trust/responsibility_ledger.dart';
@@ -53,7 +54,8 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
   String _myListingPreferredSlotId = 'slot-2';
 
   final _reportReason = TextEditingController();
-  StudyBuddyMockRow? _reportingBuddy;
+  final _reportComment = TextEditingController();
+  int _sectionIndex = 0;
 
   @override
   void initState() {
@@ -69,6 +71,7 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
   void dispose() {
     _myListingNote.dispose();
     _reportReason.dispose();
+    _reportComment.dispose();
     super.dispose();
   }
 
@@ -335,28 +338,41 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
   }
 
   void _openReportDialog(StudyBuddyMockRow buddy) {
-    _reportingBuddy = buddy;
     _reportReason.clear();
+    _reportComment.clear();
     showDialog<void>(
       context: context,
       builder: (ctx) {
         return AlertDialog(
           title: const Text('Report User'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Reporting ${buddy.name}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _reportReason,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  hintText: 'Describe inappropriate behavior...',
-                  border: OutlineInputBorder(),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Reporting ${buddy.name}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _reportReason,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Reason *',
+                    hintText: 'Describe inappropriate behavior...',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _reportComment,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Comment (optional)',
+                    hintText: 'Additional context for moderators...',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
@@ -366,8 +382,15 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                   _toast('Please enter a report reason.');
                   return;
                 }
+                BuddyInteractionLog.add(
+                  buddyName: buddy.name,
+                  reportedUserId: buddy.userId,
+                  reportReason: _reportReason.text.trim(),
+                  comment: _reportComment.text.trim(),
+                );
                 Navigator.pop(ctx);
-                _toast('Report submitted for ${buddy.name}.');
+                setState(() => _sectionIndex = 1);
+                _toast('Report saved — see Previous tab.');
               },
               child: const Text('Submit'),
             ),
@@ -375,6 +398,104 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
         );
       },
     );
+  }
+
+  Widget _buildSectionTabs(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: ChoiceChip(
+              label: const Text('Find', style: TextStyle(fontWeight: FontWeight.w700)),
+              selected: _sectionIndex == 0,
+              onSelected: _loading ? null : (_) => setState(() => _sectionIndex = 0),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: ChoiceChip(
+              label: Text(
+                'Previous (${BuddyInteractionLog.entries.length})',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              selected: _sectionIndex == 1,
+              onSelected: _loading ? null : (_) => setState(() => _sectionIndex = 1),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPreviousTab(bool isDark) {
+    final entries = BuddyInteractionLog.entries;
+    if (entries.isEmpty) {
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        children: [
+          const SizedBox(height: 24),
+          Icon(Icons.history_rounded, size: 48, color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1)),
+          const SizedBox(height: 12),
+          Text(
+            'No reports yet',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+              color: isDark ? const Color(0xFFE5E7EB) : const Color(0xFF111827),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Use Report on a buddy card. Entries stay in this session until the backend stores moderation history.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, height: 1.4, color: isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280)),
+          ),
+        ],
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      children: [
+        Text(
+          'Session reports & comments',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: isDark ? const Color(0xFFE5E7EB) : const Color(0xFF111827)),
+        ),
+        const SizedBox(height: 8),
+        ...entries.map(
+          (e) => Card(
+            margin: const EdgeInsets.only(bottom: 10),
+            child: ListTile(
+              title: Text(e.buddyName, style: const TextStyle(fontWeight: FontWeight.w800)),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 4),
+                  Text('Reason: ${e.reportReason}', style: const TextStyle(fontSize: 12, height: 1.35)),
+                  if (e.comment.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text('Comment: ${e.comment}', style: const TextStyle(fontSize: 12, height: 1.35)),
+                  ],
+                  const SizedBox(height: 4),
+                  Text(
+                    _formatReportTime(e.createdAt),
+                    style: const TextStyle(fontSize: 10, color: Color(0xFF9CA3AF)),
+                  ),
+                ],
+              ),
+              isThreeLine: true,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatReportTime(DateTime dt) {
+    final h = dt.hour.toString().padLeft(2, '0');
+    final m = dt.minute.toString().padLeft(2, '0');
+    return '${dt.day}/${dt.month}/${dt.year} $h:$m';
   }
 
   void _submitMyListing() {
@@ -449,10 +570,28 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
               ),
             ),
           ),
+          _buildSectionTabs(isDark),
           Expanded(
-            child: ListView(
+            child: _sectionIndex == 1
+                ? _buildPreviousTab(isDark)
+                : ListView(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
               children: [
+                if (_fromFallback)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: isDark ? const Color(0xFF475569) : const Color(0xFFFDE68A)),
+                    ),
+                    child: Text(
+                      'Sample buddies shown — GET /study-buddies/suggestions is empty or offline. '
+                      'Backend should implement matching for live API results.',
+                      style: TextStyle(fontSize: 11, height: 1.35, color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF92400E)),
+                    ),
+                  ),
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(

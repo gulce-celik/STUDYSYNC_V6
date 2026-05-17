@@ -41,6 +41,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   int? _selectedYear;
   final Set<String> _selectedCourseCodes = {};
   bool _coursesMenuOpen = false;
+  bool _kvkkAccepted = false;
   List<RegistrationDepartment> _departments = List.of(RegistrationMockData.departments);
 
   static final _yeditepeEmail = RegExp(r'^[a-zA-Z0-9._%+-]+@std\.yeditepe\.edu\.tr$');
@@ -176,7 +177,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _step = 3);
   }
 
+  void _showKvkkNotice() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('KVKK / Privacy Notice'),
+        content: const SingleChildScrollView(
+          child: Text(
+            'StudySync processes your university email, profile, reservations, and course '
+            'preferences to provide campus services. Data is stored for your account while you '
+            'use the app. Contact your institution for full KVKK text and data officer details.',
+            style: TextStyle(fontSize: 13, height: 1.4),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+
   Future<void> _finishRegistration() async {
+    if (!_kvkkAccepted) {
+      _toast('Please accept the KVKK privacy notice to complete registration.');
+      return;
+    }
     if (_selectedCourseCodes.isEmpty) {
       _toast('Select at least one course.');
       return;
@@ -212,6 +237,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return; //mounted is used to check if the widget is still in the tree.
       final status = e.response?.statusCode;
       if (status == 409) {
+        setState(() {
+          _step = 1;
+          _emailError = 'This email is already registered. Sign in or use another address.';
+        });
         try {
           final loginResult = await AuthApi().login(email: email, password: password);
           if (!mounted) return;
@@ -225,7 +254,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           return;
         } on DioException {
           if (!mounted) return;
-          _toast('This email is already registered. Password mismatch. Please sign in.');
+          _toast('Email already registered. Use Login with the same password.');
         }
       } else if (status == 400) {
         _toast('Invalid registration data. Please review your inputs.');
@@ -453,7 +482,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
           onSubmitted: (_) => FocusScope.of(context).unfocus(),
           decoration: _fieldDec(hint: '••••••••', prefix: Icon(Icons.lock_outline_rounded, color: Colors.grey.shade400)),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 14),
+        Center(
+          child: TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text(
+              'Already registered? Sign in',
+              style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF2563EB)),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
         FilledButton(
           onPressed: _sendCode,
           style: FilledButton.styleFrom(backgroundColor: const Color(0xFF2563EB), padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
@@ -704,7 +743,36 @@ class _RegisterScreenState extends State<RegisterScreen> {
             }).toList(),
           ),
         ],
-        const SizedBox(height: 18),
+        const SizedBox(height: 14),
+        Material(
+          color: const Color(0xFFF9FAFB),
+          borderRadius: BorderRadius.circular(12),
+          child: CheckboxListTile(
+            value: _kvkkAccepted,
+            onChanged: _loading ? null : (v) => setState(() => _kvkkAccepted = v ?? false),
+            controlAffinity: ListTileControlAffinity.leading,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+            title: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Text('I accept the ', style: TextStyle(fontSize: 12)),
+                GestureDetector(
+                  onTap: _showKvkkNotice,
+                  child: const Text(
+                    'KVKK / Privacy Notice',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF2563EB),
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
         DecoratedBox(
           decoration: BoxDecoration(
             gradient: const LinearGradient(colors: [Color(0xFF2563EB), Color(0xFF9333EA), Color(0xFFEC4899)]),
@@ -712,7 +780,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             boxShadow: [BoxShadow(color: const Color(0xFF2563EB).withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 6))],
           ),
           child: FilledButton(
-            onPressed: _loading || _selectedCourseCodes.isEmpty ? null : _finishRegistration,
+            onPressed: _loading || _selectedCourseCodes.isEmpty || !_kvkkAccepted ? null : _finishRegistration,
             style: FilledButton.styleFrom(
               backgroundColor: Colors.transparent,
               shadowColor: Colors.transparent,

@@ -1,8 +1,14 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 
+import '../../../core/campus/campus_layout_store.dart';
 import '../../../core/planner/ai_study_controller.dart';
 import '../../../core/trust/responsibility_ledger.dart';
+import '../../../shared/widgets/lost_map_badge.dart';
+import '../../lost_found/data/lost_found_api.dart';
+import '../../lost_found/lost_found_map_sync.dart';
 import '../data/reservation_api.dart';
 import '../data/reservation_mock_data.dart';
 import '../domain/reservation_models.dart';
@@ -40,18 +46,32 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
   bool _submittingReservation = false;
   bool _hideAiShortcut = false;
 
+  /// Workspaces with active lost-item reports from GET /lost-found.
+  Set<String> _lostWorkspaceIds = {};
+
   /// 0=Sun … 6=Sat (matches React `getDay()` semantics).
   late int _simulatedDay;
 
   @override
   void initState() {
     super.initState();
+    LostFoundMapSync.addListener(_reloadLostMarkers);
     final now = DateTime.now();
     // Antigravity Modification: Initialized with today's real date instead of a hardcoded 2026 date.
     _simulatedDay = _dartWeekdayToSun0(now.weekday);
     _selectedDate = now;
     AiStudyController.instance.addListener(_onAiControllerChanged);
     _consumePendingAiPrefill();
+    _reloadLostMarkers();
+    CampusLayoutStore.instance.addListener(_onCampusLayoutChanged);
+  }
+
+  void _onCampusLayoutChanged() {
+    if (_selectedWorkspaceId != null &&
+        !CampusLayoutStore.instance.workspaceExists(_selectedWorkspaceId!)) {
+      _selectedWorkspaceId = null;
+    }
+    if (mounted) setState(() {});
   }
 
   /// Antigravity Modification: Helper to link the Top Day Menu with the Calendar Date.
@@ -72,9 +92,31 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
 
   @override
   void dispose() {
+    CampusLayoutStore.instance.removeListener(_onCampusLayoutChanged);
+    LostFoundMapSync.removeListener(_reloadLostMarkers);
     AiStudyController.instance.removeListener(_onAiControllerChanged);
     _nicknameCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _reloadLostMarkers() async {
+    try {
+      final raw = await LostFoundApi().getLostItems();
+      if (!mounted) return;
+      setState(() {
+        _lostWorkspaceIds = raw
+            .where((e) {
+              final status = e['status']?.toString().toUpperCase() ?? 'REPORTED';
+              return status != 'FOUND';
+            })
+            .map((e) => e['workspaceId']?.toString() ?? '')
+            .where((id) => id.isNotEmpty)
+            .toSet();
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _lostWorkspaceIds = {});
+    }
   }
 
   void _onAiControllerChanged() {
@@ -116,6 +158,18 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
       return _remoteWorkspaces!;
     }
     return ReservationMockData.workspaces;
+  }
+
+  String get _layoutStatusCaption {
+    if (_remoteWorkspaces != null && _remoteWorkspaces!.isNotEmpty) {
+      return 'Masa düzeni ve doluluk sunucudan • Kayıp işaretler raporlardan';
+    }
+    return 'Masa düzeni admin panelinden (bu oturum) • Doluluk örnek veya sunucudan';
+  }
+
+  static String _groupRoomLabel(String workspaceId) {
+    final n = workspaceId.replaceFirst('group-', '');
+    return 'Oda $n';
   }
 
   List<CourseOption> get _userCourses {
@@ -176,9 +230,7 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
     }
   }
 
-  bool _lostAt(String workspaceId) {
-    return ReservationMockData.lostItems.any((e) => e.workspaceId == workspaceId);
-  }
+  bool _lostAt(String workspaceId) => _lostWorkspaceIds.contains(workspaceId);
 
   bool _isInstantDesk(String id) => ReservationMockData.instantDeskIds.contains(id);
 
@@ -439,9 +491,7 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 6, top: 2),
                     child: Text(
-                      _remoteWorkspaces != null && _remoteWorkspaces!.isNotEmpty
-                          ? 'Map: server layout (GET /reservations/workspaces)'
-                          : 'Map: local mock — backend boş veya çevrimdışı',
+                      _layoutStatusCaption,
                       style: TextStyle(
                         fontSize: 9,
                         color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade600,
@@ -584,28 +634,7 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
           const SizedBox(width: 4),
           Text('Not open', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade700)),
           const SizedBox(width: 10),
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: const Color(0xFFFBBF24),
-              shape: BoxShape.circle,
-              border: Border.all(color: const Color(0xFFD97706)),
-            ),
-            child: const Center(
-              child: Text(
-                '!',
-                style: TextStyle(
-                  fontSize: 7,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF854D0E),
-                  height: 1.1,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Text('Lost Item', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade700)),
+          _lostLegendRow(isDark),
         ],
       );
     }
@@ -619,28 +648,18 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
         const SizedBox(width: 4),
         Text('Busy', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade700)),
         const SizedBox(width: 10),
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(
-            color: const Color(0xFFFBBF24),
-            shape: BoxShape.circle,
-            border: Border.all(color: const Color(0xFFD97706)),
-          ),
-          child: const Center(
-            child: Text(
-              '!',
-              style: TextStyle(
-                fontSize: 7,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF854D0E),
-                height: 1.1,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 4),
-        Text('Lost Item', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade700)),
+        _lostLegendRow(isDark),
+      ],
+    );
+  }
+
+  Widget _lostLegendRow(bool isDark) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const LostMapBadge(size: 20),
+        const SizedBox(width: 6),
+        Text('Lost item', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFF9CA3AF) : Colors.grey.shade700)),
       ],
     );
   }
@@ -653,6 +672,11 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
         final h = maxW * (ReservationMockData.mapHeight / ReservationMockData.mapWidth);
         final sx = maxW / ReservationMockData.mapWidth;
         final sy = h / ReservationMockData.mapHeight;
+        final layout = _layoutWorkspaces;
+        final groupRooms = layout.where((w) => w.type == 'group').toList();
+        final groupLabelY = groupRooms.isEmpty
+            ? 220.0 * sy
+            : (groupRooms.map((w) => w.y).reduce(math.min) * sy - 20).clamp(8.0, h - 28);
 
         return ClipRRect(
           borderRadius: BorderRadius.circular(14),
@@ -664,6 +688,7 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
               border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE5E7EB)),
             ),
             child: Stack(
+              clipBehavior: Clip.hardEdge,
               children: [
                 Positioned(
                   top: 6,
@@ -680,7 +705,7 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
                   ),
                 ),
                 Positioned(
-                  top: 220 * sy,
+                  top: groupLabelY,
                   left: 0,
                   right: 0,
                   child: Text(
@@ -721,8 +746,8 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
                                   color: _fillForWorkspace(ws),
                                   borderRadius: BorderRadius.circular(ws.type == 'individual' ? 3 : 6),
                                   border: Border.all(
-                                    color: _strokeForWorkspace(ws),
-                                    width: selected ? 3 : 2,
+                                    color: _lostAt(ws.id) ? const Color(0xFFF59E0B) : _strokeForWorkspace(ws),
+                                    width: _lostAt(ws.id) ? 3 : (selected ? 3 : 2),
                                   ),
                                 ),
                                 child: Center(
@@ -735,50 +760,38 @@ class _ReservationMapScreenState extends State<ReservationMapScreen> {
                                             fontSize: 11,
                                           ),
                                         )
-                                      : Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Text(
-                                              ws.id,
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.w800,
-                                                fontSize: 10,
-                                              ),
+                                      : FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(horizontal: 2),
+                                            child: Column(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  _groupRoomLabel(ws.id),
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.w800,
+                                                    fontSize: 10,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  'Cap ${ws.capacity}',
+                                                  style: const TextStyle(color: Colors.white, fontSize: 8),
+                                                ),
+                                              ],
                                             ),
-                                            Text(
-                                              'Cap: ${ws.capacity}',
-                                              style: const TextStyle(color: Colors.white, fontSize: 9),
-                                            ),
-                                          ],
+                                          ),
                                         ),
                                 ),
                               ),
                             ),
                             if (_lostAt(ws.id))
-                              Positioned(
-                                top: -4,
-                                right: -4,
-                                child: Container(
-                                  width: 14,
-                                  height: 14,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFBBF24),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: const Color(0xFFD97706)),
-                                  ),
-                                  child: const Center(
-                                    child: Text(
-                                      '!',
-                                      style: TextStyle(
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF854D0E),
-                                        height: 1.1,
-                                      ),
-                                    ),
-                                  ),
-                                ),
+                              const Positioned(
+                                top: -10,
+                                right: -10,
+                                child: LostMapBadge(size: 28),
                               ),
                           ],
                         ),

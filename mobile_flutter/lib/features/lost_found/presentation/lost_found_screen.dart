@@ -1,9 +1,11 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
+import '../../../shared/widgets/lost_map_badge.dart';
 import '../../reservation/data/reservation_mock_data.dart';
 import '../../reservation/domain/reservation_models.dart';
 import '../data/lost_found_api.dart';
+import '../lost_found_map_sync.dart';
 
 class _LostRow {
   const _LostRow({
@@ -12,6 +14,7 @@ class _LostRow {
     required this.description,
     required this.reportedAt,
     required this.expiresAt,
+    required this.status,
   });
 
   final String id;
@@ -19,6 +22,20 @@ class _LostRow {
   final String description;
   final String reportedAt;
   final String expiresAt;
+  final String status;
+
+  bool get isFound => status.toUpperCase() == 'FOUND';
+
+  _LostRow copyWith({String? status}) {
+    return _LostRow(
+      id: id,
+      workspaceId: workspaceId,
+      description: description,
+      reportedAt: reportedAt,
+      expiresAt: expiresAt,
+      status: status ?? this.status,
+    );
+  }
 
   factory _LostRow.fromApi(Map<String, dynamic> m) {
     final reported = m['reportedAt']?.toString() ?? '';
@@ -30,6 +47,7 @@ class _LostRow {
       description: m['description']?.toString() ?? '',
       reportedAt: reported,
       expiresAt: exp,
+      status: m['status']?.toString() ?? 'REPORTED',
     );
   }
 }
@@ -56,6 +74,7 @@ class _LostFoundScreenState extends State<LostFoundScreen> {
       description: 'Black phone charger (USB-C)',
       reportedAt: '2026-03-10T14:30:00',
       expiresAt: '2026-03-11T14:30:00',
+      status: 'REPORTED',
     ),
     _LostRow(
       id: 'lost-2',
@@ -63,6 +82,7 @@ class _LostFoundScreenState extends State<LostFoundScreen> {
       description: 'Blue notebook - Algorithms notes',
       reportedAt: '2026-03-10T11:00:00',
       expiresAt: '2026-03-11T11:00:00',
+      status: 'REPORTED',
     ),
   ];
 
@@ -83,8 +103,8 @@ class _LostFoundScreenState extends State<LostFoundScreen> {
       final mapped = raw.map((e) => _LostRow.fromApi(Map<String, dynamic>.from(e))).toList();
       if (!mounted) return;
       setState(() {
-        _items = mapped.isNotEmpty ? mapped : List.of(_mockRows);
-        _listFromFallback = mapped.isEmpty;
+        _items = mapped;
+        _listFromFallback = false;
         _loadingList = false;
       });
     } on DioException {
@@ -104,7 +124,10 @@ class _LostFoundScreenState extends State<LostFoundScreen> {
     }
   }
 
-  bool _hasLost(String workspaceId) => _items.any((e) => e.workspaceId == workspaceId);
+  bool _hasLost(String workspaceId) {
+    if (_listFromFallback) return false;
+    return _items.any((e) => e.workspaceId == workspaceId && !e.isFound);
+  }
 
   String _timeRemaining(String expiresAt) {
     final now = DateTime.now();
@@ -112,6 +135,20 @@ class _LostFoundScreenState extends State<LostFoundScreen> {
     if (expires == null) return '—';
     final h = expires.difference(now).inHours;
     return h > 0 ? '${h}h left' : 'Expired';
+  }
+
+  void _markFound(_LostRow row) {
+    setState(() {
+      _items = _items.map((e) => e.id == row.id ? e.copyWith(status: 'FOUND') : e).toList();
+    });
+    LostFoundMapSync.notifyChanged();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Marked as found in this session. Backend needs PATCH /lost-found/{id}/found to persist.',
+        ),
+      ),
+    );
   }
 
   void _openReport() {
@@ -171,6 +208,7 @@ class _LostFoundScreenState extends State<LostFoundScreen> {
                         Navigator.pop(ctx);
                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Item reported!')));
                         await _loadItems();
+                        LostFoundMapSync.notifyChanged();
                       } on DioException {
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -274,17 +312,9 @@ class _LostFoundScreenState extends State<LostFoundScreen> {
                           ),
                           if (lost)
                             Positioned(
-                              right: 4 * sx,
-                              top: 4 * sy,
-                              child: Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFEF4444),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white, width: 1.5),
-                                ),
-                              ),
+                              right: -6 * sx,
+                              top: -8 * sy,
+                              child: const LostMapBadge(size: 26),
                             ),
                         ],
                       ),
@@ -417,8 +447,22 @@ class _LostFoundScreenState extends State<LostFoundScreen> {
                           children: [
                             _legendMini(const Color(0xFF60A5FA), const Color(0xFF2563EB), 'Free'),
                             _legendMini(const Color(0xFFF87171), const Color(0xFFDC2626), 'Busy'),
-                            _legendMini(const Color(0xFFFBBF24), const Color(0xFFD97706), 'Lost Item'),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const LostMapBadge(size: 18),
+                                const SizedBox(width: 4),
+                                const Text('Lost item', style: TextStyle(fontSize: 9, color: Color(0xFF6B7280))),
+                              ],
+                            ),
                           ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _listFromFallback
+                              ? 'Map preview — no server data'
+                              : 'Yellow markers = items reported via this app (same as Reserve map)',
+                          style: const TextStyle(fontSize: 10, height: 1.3, color: Color(0xFF6B7280)),
                         ),
                         const SizedBox(height: 10),
                         _buildMap(),
@@ -427,25 +471,54 @@ class _LostFoundScreenState extends State<LostFoundScreen> {
                   ),
                 ],
                 const SizedBox(height: 16),
-                const Text('Recent reports', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text('Recent reports', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                    ),
+                    if (_listFromFallback)
+                      const Text('Sample only — offline', style: TextStyle(fontSize: 10, color: Color(0xFF9CA3AF))),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 if (_loadingList)
                   const Padding(
                     padding: EdgeInsets.all(20),
                     child: Center(child: CircularProgressIndicator()),
                   )
+                else if (_items.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      'No reports yet. Use Report Item or pull to refresh when the server has data.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, color: Color(0xFF6B7280), height: 1.4),
+                    ),
+                  )
                 else
                   ..._items.map(
                   (e) => Card(
                     margin: const EdgeInsets.only(bottom: 10),
                     child: ListTile(
-                      leading: const CircleAvatar(
-                        backgroundColor: Color(0xFFFEF3C7),
-                        child: Icon(Icons.inventory_2_outlined, color: Color(0xFFD97706), size: 20),
+                      leading: CircleAvatar(
+                        backgroundColor: e.isFound ? const Color(0xFFD1FAE5) : const Color(0xFFFEF3C7),
+                        child: Icon(
+                          e.isFound ? Icons.check_rounded : Icons.inventory_2_outlined,
+                          color: e.isFound ? const Color(0xFF15803D) : const Color(0xFFD97706),
+                          size: 20,
+                        ),
                       ),
                       title: Text(e.description, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-                      subtitle: Text('${e.workspaceId} • ${_timeRemaining(e.expiresAt)}',
-                          style: const TextStyle(fontSize: 11)),
+                      subtitle: Text(
+                        '${e.workspaceId} • ${e.isFound ? "Found" : _timeRemaining(e.expiresAt)}',
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      trailing: e.isFound
+                          ? null
+                          : TextButton(
+                              onPressed: () => _markFound(e),
+                              child: const Text('Found', style: TextStyle(fontWeight: FontWeight.w800)),
+                            ),
                     ),
                   ),
                 ),

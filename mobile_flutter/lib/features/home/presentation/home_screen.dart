@@ -1,13 +1,20 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/material.dart';
 
 import '../../../core/planner/ai_study_controller.dart';
 import '../../../core/session/auth_session.dart';
 import '../../../core/trust/responsibility_ledger.dart';
 import '../../../core/network/dashboard_api.dart';
+import '../../../shared/check_in/reservation_check_in_sheet.dart';
 import '../../../shared/navigation/app_tab_controller.dart';
 import '../../courses/presentation/course_rating_screen.dart';
 import '../../lost_found/presentation/lost_found_screen.dart';
+import '../../reservation/data/reservation_api.dart';
+import '../../reservation/domain/reservation_models.dart';
 import '../../reservations/presentation/my_bookings_screen.dart';
+import '../../notifications/data/notifications_controller.dart';
+import '../../notifications/presentation/widgets/notification_bell_button.dart';
 import '../data/home_mock_data.dart';
 
 /// Figma / React `Home.tsx` — hero, sorumluluk rozeti, study tip, gradient quick actions, upcoming, davetler.
@@ -20,7 +27,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late List<HomeGroupInvitation> _invitations;
-  final Set<String> _demoCheckedInIds = <String>{};
+  final Set<String> _checkedInSessionIds = <String>{};
   int? _apiTotalReservations;
   int? _apiActiveToday;
   List<HomeUpcomingReservation>? _apiUpcomingReservations;
@@ -36,6 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
     ResponsibilityLedger.instance.setHomeContext(mockOnly: HomeMockData.responsibilityScore);
     ResponsibilityLedger.instance.addListener(_onLedgerChanged);
     _loadDashboard();
+    unawaited(NotificationsController.instance.refresh());
   }
 
   @override
@@ -53,6 +61,8 @@ class _HomeScreenState extends State<HomeScreen> {
       final apiScoreRaw = d['responsibilityScore'];
       if (!mounted) return;
       setState(() {
+        // No group-invitations API yet — sample rows for UI demo only.
+        _invitations = HomeMockData.initialInvitations();
         final apiScore = apiScoreRaw is num ? apiScoreRaw.toInt() : HomeMockData.responsibilityScore;
         ResponsibilityLedger.instance.setHomeContext(mockOnly: apiScore);
         if (quickStats is Map<String, dynamic>) {
@@ -86,47 +96,61 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _acceptInvitation(String id) {
     setState(() => _invitations = _invitations.where((e) => e.id != id).toList());
+    NotificationsController.instance.removeByRelatedId(id);
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Accepted!')));
   }
 
   void _rejectInvitation(String id) {
     setState(() => _invitations = _invitations.where((e) => e.id != id).toList());
+    NotificationsController.instance.removeByRelatedId(id);
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Rejected')));
   }
 
   void _goTab(int index) => AppTabController.instance.selectTab(index);
 
-  Future<void> _showDemoCheckInSheet(HomeUpcomingReservation reservation) async {
-    final payload = 'DEMO-QR-${reservation.id}';
-    await showModalBottomSheet<void>(
-      context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('QR Check-In', style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 8),
-              Text('Payload: $payload', style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280))),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: () {
-                  setState(() => _demoCheckedInIds.add(reservation.id));
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Demo mode: check-in simulated successfully.')),
-                  );
-                },
-                child: const Text('Mark as Checked-In (Demo)'),
-              ),
-            ],
-          ),
+  Future<void> _openCheckInFromHome(HomeUpcomingReservation summary) async {
+    try {
+      final list = await ReservationApi().getMyReservations();
+      ReservationDetail? detail;
+      for (final r in list) {
+        if (r.id == summary.id) {
+          detail = r;
+          break;
+        }
+      }
+      if (!mounted) return;
+      if (detail == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Reservation not found. Try My Bookings.')),
         );
-      },
-    );
+        return;
+      }
+      final status = detail.status.toUpperCase();
+      if (status != 'ACTIVE' && status != 'PENDING') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('This reservation is already $status.')),
+        );
+        return;
+      }
+
+      await showReservationCheckInSheet(
+        context: context,
+        reservation: detail,
+        onSuccess: () {
+          if (!mounted) return;
+          setState(() => _checkedInSessionIds.add(summary.id));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Check-in successful!')),
+          );
+          _loadDashboard();
+        },
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not load reservation. Is the backend running?')),
+      );
+    }
   }
 
   String _firstNameForGreeting() {
@@ -183,6 +207,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         ],
                       ),
                     ),
+                    const NotificationBellButton(),
+                    const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
@@ -520,13 +546,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(r.date, style: const TextStyle(fontSize: 10, color: Color(0xFF9CA3AF))),
-                                  if (_demoCheckedInIds.contains(r.id))
+                                  if (_checkedInSessionIds.contains(r.id))
                                     const Row(
                                       children: [
                                         Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF16A34A)),
                                         SizedBox(width: 4),
                                         Text(
-                                          'Checked in (Demo)',
+                                          'Checked in',
                                           style: TextStyle(
                                             fontSize: 10,
                                             fontWeight: FontWeight.w700,
@@ -538,7 +564,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   else
                                     InkWell(
                                       borderRadius: BorderRadius.circular(8),
-                                      onTap: () => _showDemoCheckInSheet(r),
+                                      onTap: () => _openCheckInFromHome(r),
                                       child: Padding(
                                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                                         child: Row(
@@ -598,7 +624,14 @@ class _HomeScreenState extends State<HomeScreen> {
                           const Text('Group Study Invitation',
                               style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF7E22CE))),
                           const SizedBox(height: 4),
-                          Text(inv.workspaceId, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+                          Text('${inv.inviterName} invited you',
+                              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+                          Text(inv.workspaceId, style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+                          if (inv.memberPreview.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text('With: ${inv.memberPreview}',
+                                style: const TextStyle(fontSize: 11, color: Color(0xFF7C3AED), fontWeight: FontWeight.w600)),
+                          ],
                           const SizedBox(height: 6),
                           Row(
                             children: [

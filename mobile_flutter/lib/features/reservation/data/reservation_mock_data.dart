@@ -1,3 +1,4 @@
+import '../../../core/campus/campus_layout_store.dart';
 import '../../auth/data/registration_mock_data.dart';
 import '../domain/reservation_models.dart';
 
@@ -5,10 +6,11 @@ import '../domain/reservation_models.dart';
 class ReservationMockData {
   ReservationMockData._();
 
-  static const double mapWidth = 330;
-  static const double mapHeight = 400;
+  static double get mapWidth => CampusLayoutStore.instance.mapWidth;
 
-  static const List<String> instantDeskIds = ['desk-2', 'desk-15'];
+  static double get mapHeight => CampusLayoutStore.instance.mapHeight;
+
+  static List<String> get instantDeskIds => CampusLayoutStore.instance.instantDeskIds;
 
   /// Demo/offline — align with [HomeMockData.responsibilityScore] when not using server.
   static const int mockResponsibilityScore = 75;
@@ -28,61 +30,10 @@ class ReservationMockData {
       .map((c) => CourseOption(code: c.code, name: c.name))
       .toList();
 
-  static final List<LostItemRef> lostItems = [
-    LostItemRef(workspaceId: 'desk-8'),
-    LostItemRef(workspaceId: 'group-2'),
-  ];
+  /// Map markers come from GET /lost-found (see [ReservationMapScreen]).
+  static final List<LostItemRef> lostItems = [];
 
-  static final List<Workspace> workspaces = _buildWorkspaces();
-
-  static List<Workspace> _buildWorkspaces() {
-    final desks = List<Workspace>.generate(24, (i) {
-      final occupied = i == 0 || i == 6 || i == 17;
-      return Workspace(
-        id: 'desk-${i + 1}',
-        type: 'individual',
-        capacity: 1,
-        status: occupied ? 'occupied' : 'available',
-        x: 12 + (i % 8) * 40,
-        y: 35 + (i ~/ 8) * 65,
-      );
-    });
-    final groups = <Workspace>[
-      Workspace(
-        id: 'group-1',
-        type: 'group',
-        capacity: 4,
-        status: 'available',
-        x: 12,
-        y: 265,
-      ),
-      Workspace(
-        id: 'group-2',
-        type: 'group',
-        capacity: 4,
-        status: 'occupied',
-        x: 89,
-        y: 265,
-      ),
-      Workspace(
-        id: 'group-3',
-        type: 'group',
-        capacity: 6,
-        status: 'available',
-        x: 166,
-        y: 265,
-      ),
-      Workspace(
-        id: 'group-4',
-        type: 'group',
-        capacity: 4,
-        status: 'available',
-        x: 243,
-        y: 265,
-      ),
-    ];
-    return [...desks, ...groups];
-  }
+  static List<Workspace> get workspaces => CampusLayoutStore.instance.workspaces;
 }
 
 class TimeSlot {

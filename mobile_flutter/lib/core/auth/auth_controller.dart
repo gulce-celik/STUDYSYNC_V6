@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import '../../features/auth/data/auth_api.dart';
+import '../../features/notifications/data/notifications_controller.dart';
 import '../session/auth_session.dart';
 import '../trust/responsibility_ledger.dart';
 
 class AuthController extends ChangeNotifier {
   bool _isLoggedIn = false; // _ is used to make the variable private.
 
-  bool get isLoggedIn => _isLoggedIn; // getter is used to get the value of the variable.
+  bool get isLoggedIn => _isLoggedIn;
+  bool get isAdminSession => AuthSession.instance.isAdmin;
 
   /// Backend [POST /auth/login] başarılı yanıtından sonra çağrılır; token [ApiClient] ile gider.
   void establishSession({ // 
@@ -22,9 +24,33 @@ class AuthController extends ChangeNotifier {
     // so the daily limit is per-user, not per-device.
     final uid = AuthSession.instance.userId;
     if (uid != null) ResponsibilityLedger.instance.resetForUser(uid);
+    AuthSession.instance.isAdmin = false;
     if (!_isLoggedIn) {
       _isLoggedIn = true;
     }
+    notifyListeners();
+    if (!AuthSession.instance.isAdmin) {
+      NotificationsController.instance.refresh();
+    }
+  }
+
+  /// Staff console — allowlisted `@yeditepe.edu.tr` (see [AdminAllowlist]).
+  /// Pass [accessToken] from [AuthApi.login] (or API bridge) for live campus data.
+  void establishAdminSession({
+    required String email,
+    required String displayName,
+    String? accessToken,
+    String? refreshToken,
+  }) {
+    final session = AuthSession.instance;
+    session.clear();
+    session.isAdmin = true;
+    session.userEmail = email;
+    session.userName = displayName;
+    session.userId = 'admin-${email.hashCode}';
+    session.accessToken = accessToken;
+    session.refreshToken = refreshToken;
+    _isLoggedIn = true;
     notifyListeners();
   }
 
@@ -59,9 +85,8 @@ class AuthController extends ChangeNotifier {
 
   void logout() {
     AuthSession.instance.clear();
-    if (_isLoggedIn) {
-      _isLoggedIn = false;
-      notifyListeners();
-    }
+    NotificationsController.instance.clear();
+    _isLoggedIn = false;
+    notifyListeners();
   }
 }

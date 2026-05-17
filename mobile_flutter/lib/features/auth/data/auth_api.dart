@@ -2,6 +2,15 @@ import 'package:dio/dio.dart';
 
 import '../../../core/network/api_client.dart';
 
+enum PasswordResetStatus { submitted, notAvailable, invalidRequest, networkError }
+
+class PasswordResetResult {
+  const PasswordResetResult({required this.status, required this.message});
+
+  final PasswordResetStatus status;
+  final String message;
+}
+
 class LoginResult {
   LoginResult({
     required this.accessToken,
@@ -82,6 +91,49 @@ class AuthApi {
   Future<Map<String, dynamic>> getMe() async {
     final response = await ApiClient.instance.dio.get<Map<String, dynamic>>('/auth/me');
     return response.data ?? {};
+  }
+
+  /// [POST /auth/forgot-password] — ready when backend adds it; otherwise 404/501.
+  Future<PasswordResetResult> requestPasswordReset({required String email}) async {
+    try {
+      await ApiClient.instance.dio.post<void>(
+        '/auth/forgot-password',
+        data: {'email': email},
+      );
+      return const PasswordResetResult(
+        status: PasswordResetStatus.submitted,
+        message:
+            'If this email is registered, reset instructions will be sent when email delivery is enabled.',
+      );
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      if (status == 404 || status == 501 || status == 405) {
+        return const PasswordResetResult(
+          status: PasswordResetStatus.notAvailable,
+          message:
+              'Password reset is not enabled on the server yet. Ask the backend team or use your existing password.',
+        );
+      }
+      if (status == 400) {
+        return const PasswordResetResult(
+          status: PasswordResetStatus.invalidRequest,
+          message: 'Could not process this email address. Check the format and try again.',
+        );
+      }
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout) {
+        return const PasswordResetResult(
+          status: PasswordResetStatus.networkError,
+          message: 'Cannot reach the server. Start the backend on port 8080 and try again.',
+        );
+      }
+      return PasswordResetResult(
+        status: PasswordResetStatus.networkError,
+        message: e.message ?? 'Password reset request failed.',
+      );
+    }
   }
 
   /// [PUT /auth/password] — Şifre değiştirme endpointi.
