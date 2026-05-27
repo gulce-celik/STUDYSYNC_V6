@@ -1,6 +1,8 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../features/auth/data/registration_mock_data.dart';
+import '../../features/planner/data/ai_suggestion_api.dart';
 import '../../features/reservation/data/reservation_mock_data.dart';
 import '../../features/schedule/data/schedule_mock_data.dart';
 import '../session/auth_session.dart';
@@ -13,6 +15,10 @@ class AiSuggestion {
     required this.courseCode,
     required this.slotLabel,
     required this.dateIso,
+    this.slotId,
+    this.weekday,
+    this.confidenceScore,
+    this.reason,
   });
 
   final String id;
@@ -21,6 +27,30 @@ class AiSuggestion {
   final String courseCode;
   final String slotLabel;
   final String dateIso;
+  final String? slotId;
+  final String? weekday;
+  final int? confidenceScore;
+  final String? reason;
+}
+
+class BuddyAiSuggestion {
+  const BuddyAiSuggestion({
+    required this.message,
+    this.courseCode,
+    this.slotId,
+    this.weekday,
+    this.dateIso,
+    this.focusFilter,
+    this.minMatchScore,
+  });
+
+  final String message;
+  final String? courseCode;
+  final String? slotId;
+  final String? weekday;
+  final String? dateIso;
+  final String? focusFilter;
+  final int? minMatchScore;
 }
 
 class ReservePrefill {
@@ -38,7 +68,7 @@ class ReservePrefill {
 class AiStudyController extends ChangeNotifier {
   AiStudyController._() {
     _scheduleBlocks = List.of(ScheduleMockData.initialBlocks());
-    _rebuildSuggestions();
+    _rebuildSuggestionsLocal();
   }
 
   static final AiStudyController instance = AiStudyController._();
@@ -49,20 +79,29 @@ class AiStudyController extends ChangeNotifier {
   String? _preferredTime;
   String? _preferredDays;
   List<AiSuggestion> _suggestions = const [];
+  BuddyAiSuggestion? _buddySuggestion;
+  String _source = 'local';
+  bool _loading = false;
   ReservePrefill? _pendingPrefill;
+  DateTime? _lastServerRefreshAt;
+  Future<void>? _inFlightRefresh;
+  static const Duration _minRefreshInterval = Duration(seconds: 45);
 
   List<AiSuggestion> get suggestions => _suggestions;
+  BuddyAiSuggestion? get buddySuggestion => _buddySuggestion;
+  String get suggestionSource => _source;
+  bool get isLoading => _loading;
 
   void updateSchedule(List<ScheduleBlock> blocks) {
     _scheduleBlocks = blocks
         .where((b) => b.type != ScheduleBlockType.exam || !_isPastExam(b))
         .toList(growable: false);
-    _rebuildSuggestions();
+    refreshFromServer();
   }
 
   void updateCourseRating(String courseCode, int rating) {
     _courseRatings[courseCode.toUpperCase()] = rating;
-    _rebuildSuggestions();
+    refreshFromServer();
   }
 
   void updateProfilePreferences({
@@ -73,7 +112,99 @@ class AiStudyController extends ChangeNotifier {
     _studyGoal = studyGoal;
     _preferredTime = preferredTime;
     _preferredDays = preferredDays;
-    _rebuildSuggestions();
+    refreshFromServer(force: true);
+  }
+
+  Future<void> refreshFromServer({bool force = false}) async {
+    if (AuthSession.instance.accessToken == null || AuthSession.instance.isAdmin) {
+      _rebuildSuggestionsLocal();
+      return;
+    }
+
+    final now = DateTime.now();
+    if (!force &&
+        _lastServerRefreshAt != null &&
+        now.difference(_lastServerRefreshAt!) < _minRefreshInterval) {
+      return;
+    }
+
+    if (_inFlightRefresh != null) {
+      await _inFlightRefresh;
+      return;
+    }
+
+    _loading = true;
+    notifyListeners();
+    _inFlightRefresh = _fetchFromServer();
+    try {
+      await _inFlightRefresh;
+    } finally {
+      _inFlightRefresh = null;
+    }
+  }
+
+  Future<void> _fetchFromServer() async {
+    try {
+      final payload = await AiSuggestionApi().getSuggestions();
+      _applyServerPayload(payload);
+      _source = payload.source;
+      _lastServerRefreshAt = DateTime.now();
+    } on DioException catch (e) {
+      debugPrint('[AiStudyController] API fallback (${e.response?.statusCode}): ${e.message}');
+      _rebuildSuggestionsLocal();
+      _source = 'local-fallback';
+    } catch (e) {
+      debugPrint('[AiStudyController] fallback: $e');
+      _rebuildSuggestionsLocal();
+      _source = 'local-fallback';
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
+  }
+
+  void _applyServerPayload(AiSuggestionsPayload payload) {
+    _suggestions = payload.reserveSuggestions.map(_mapReserveSuggestion).whereType<AiSuggestion>().toList();
+    final buddyRaw = payload.buddySuggestion;
+    if (buddyRaw != null) {
+      final message = buddyRaw['message']?.toString() ?? '';
+      if (message.isNotEmpty) {
+        _buddySuggestion = BuddyAiSuggestion(
+          message: message,
+          courseCode: buddyRaw['courseCode']?.toString(),
+          slotId: buddyRaw['slotId']?.toString(),
+          weekday: buddyRaw['weekday']?.toString(),
+          dateIso: buddyRaw['dateIso']?.toString(),
+          focusFilter: message.toLowerCase().contains('exam') ? 'Exam prep' : null,
+          minMatchScore: message.toLowerCase().contains('exam') ? 70 : null,
+        );
+      }
+    }
+    if (_suggestions.isEmpty) {
+      _rebuildSuggestionsLocal();
+    }
+  }
+
+  AiSuggestion? _mapReserveSuggestion(Map<String, dynamic> raw) {
+    final message = raw['message']?.toString() ?? '';
+    final courseCode = raw['courseCode']?.toString() ?? '';
+    final slotLabel = raw['slotLabel']?.toString() ?? '';
+    final dateIso = raw['dateIso']?.toString() ?? '';
+    if (message.isEmpty || courseCode.isEmpty || slotLabel.isEmpty || dateIso.isEmpty) {
+      return null;
+    }
+    return AiSuggestion(
+      id: raw['id']?.toString() ?? 'ai-${DateTime.now().millisecondsSinceEpoch}',
+      title: raw['title']?.toString() ?? 'AI suggestion',
+      message: message,
+      courseCode: courseCode,
+      slotLabel: slotLabel,
+      dateIso: dateIso,
+      slotId: raw['slotId']?.toString(),
+      weekday: raw['weekday']?.toString(),
+      confidenceScore: raw['confidenceScore'] is num ? (raw['confidenceScore'] as num).toInt() : null,
+      reason: raw['reason']?.toString(),
+    );
   }
 
   ReservePrefill acceptSuggestion(AiSuggestion s) {
@@ -107,7 +238,7 @@ class AiStudyController extends ChangeNotifier {
     return examDate.isBefore(nowDate);
   }
 
-  void _rebuildSuggestions() {
+  void _rebuildSuggestionsLocal() {
     final occupied = <String>{};
     for (final b in _scheduleBlocks) {
       occupied.add('${b.day}|${b.timeSlot}');
@@ -161,11 +292,17 @@ class AiStudyController extends ChangeNotifier {
     }
 
     _suggestions = generated;
+    _buddySuggestion = BuddyAiSuggestion(
+      message: 'AI Suggestion: Try matching with a buddy for $course this week.',
+      courseCode: course,
+      slotId: 'slot-2',
+      weekday: generated.first.weekday ?? 'Tue',
+    );
     notifyListeners();
   }
 
   List<String> _preferredSlotCandidates() {
-    switch ((_preferredTime ?? '').toLowerCase()) {
+    switch ((_preferredTime ?? AuthSession.instance.plannerPreferredTime ?? '').toLowerCase()) {
       case 'morning':
         return const ['09-10', '10-11', '11-12'];
       case 'afternoon':
@@ -178,7 +315,7 @@ class AiStudyController extends ChangeNotifier {
   }
 
   List<String> _preferredDayCandidates() {
-    final pref = (_preferredDays ?? '').toLowerCase();
+    final pref = (_preferredDays ?? AuthSession.instance.plannerPreferredDays ?? '').toLowerCase();
     if (pref == 'weekend') return const ['Fri', 'Thu', 'Wed'];
     return const ['Tue', 'Wed', 'Thu', 'Fri', 'Mon'];
   }
@@ -190,7 +327,7 @@ class AiStudyController extends ChangeNotifier {
       if (_courseRatings.isNotEmpty) {
         final enrolledRatings = _courseRatings.entries.where((e) => enrolled.contains(e.key)).toList();
         if (enrolledRatings.isNotEmpty) {
-          enrolledRatings.sort((a, b) => a.value.compareTo(b.value));
+          enrolledRatings.sort((a, b) => b.value.compareTo(a.value));
           return enrolledRatings.first.key;
         }
       }
@@ -198,10 +335,10 @@ class AiStudyController extends ChangeNotifier {
     }
 
     if (_courseRatings.isNotEmpty) {
-      final sorted = _courseRatings.entries.toList()..sort((a, b) => a.value.compareTo(b.value));
+      final sorted = _courseRatings.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
       return sorted.first.key;
     }
-    
+
     for (final b in _scheduleBlocks) {
       final c = _extractCourseCode(b.label);
       if (c != null) return c;

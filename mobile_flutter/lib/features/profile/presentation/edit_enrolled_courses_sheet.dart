@@ -5,8 +5,7 @@ import '../../auth/data/auth_api.dart';
 import '../../auth/data/registration_mock_data.dart';
 import '../../courses/data/course_api.dart';
 
-/// Lets the user update enrolled courses for the current session.
-/// Persists to [AuthSession] only until a backend profile API exists.
+/// Lets the user update enrolled courses — saved to the server profile (PUT /auth/me/courses).
 Future<void> showEditEnrolledCoursesSheet({
   required BuildContext context,
   required VoidCallback onSaved,
@@ -143,7 +142,7 @@ class _EditEnrolledCoursesSheetState extends State<_EditEnrolledCoursesSheet> {
             ],
           ),
           const Text(
-            'Changes are saved to your profile and applied in this session.',
+            'Saved to your profile. Study Assistant and AI use these courses from the database.',
             style: TextStyle(fontSize: 11, height: 1.35, color: Color(0xFF6B7280)),
           ),
           const SizedBox(height: 12),

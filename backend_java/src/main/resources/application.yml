@@ -21,6 +21,10 @@ spring:
 app:
   jwtSecret: ${JWT_SECRET:ThisIsAVeryLongSecretForTestingPurposesStudySync123!}
   jwtExpirationMs: ${JWT_EXPIRATION_MS:86400000}
+  ai:
+    python:
+      base-url: ${AI_PYTHON_BASE_URL:http://localhost:8090}
+      enabled: ${AI_PYTHON_ENABLED:true}
 
 brevo:
   api:

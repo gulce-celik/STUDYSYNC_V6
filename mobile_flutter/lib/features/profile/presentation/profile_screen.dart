@@ -8,8 +8,9 @@ import '../../../core/session/auth_session.dart';
 import '../../../core/trust/responsibility_ledger.dart';
 import '../../../core/theme/theme_mode_controller.dart';
 import '../../../shared/navigation/app_tab_controller.dart';
-import '../../auth/data/registration_mock_data.dart';
 import '../../auth/data/auth_api.dart';
+import '../../auth/data/registration_mock_data.dart';
+import '../../courses/data/course_api.dart';
 import '../../reservation/data/reservation_api.dart';
 import '../../reservation/domain/reservation_detail_score.dart';
 import '../../reservation/domain/reservation_models.dart';
@@ -35,6 +36,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<ProfileScoreEntry> _scoreHistory = [];
   bool _scoreHistoryLoading = false;
   bool _scoreHistoryLoaded = false;
+  final Map<String, String> _catalogNames = {};
 
   static const int _profileTabIndex = 4;
 
@@ -48,13 +50,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ThemeMode.light => _DarkModePref.off,
     };
     AppTabController.instance.addListener(_onProfileTabOpened);
+    final session = AuthSession.instance;
+    _studyGoal = session.plannerStudyGoal;
+    _preferredTime = session.plannerPreferredTime;
+    _preferredDays = session.plannerPreferredDays;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       AuthScope.of(context).refreshProfile();
+      _loadCourseCatalog();
       if (AppTabController.instance.currentIndex == _profileTabIndex) {
         _loadScoreHistoryOnce();
       }
     });
+  }
+
+  Future<void> _loadCourseCatalog() async {
+    try {
+      final list = await CourseApi().getCourses();
+      if (!mounted) return;
+      setState(() {
+        _catalogNames
+          ..clear()
+          ..addEntries(
+            list.map((m) {
+              final code = m['code']?.toString() ?? '';
+              final name = m['name']?.toString() ?? code;
+              return MapEntry(code, name);
+            }).where((e) => e.key.isNotEmpty),
+          );
+      });
+    } catch (_) {
+      // Profile still shows course codes from session if catalog fetch fails.
+    }
   }
 
   @override
@@ -116,9 +143,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final out = <RegistrationCourse>[];
     final session = AuthSession.instance;
     for (final code in session.enrolledCourseCodes) {
-      for (final c in RegistrationMockData.courses) {
-        if (c.code == code) out.add(c);
-      }
+      final name = _catalogNames[code] ??
+          RegistrationMockData.courses
+              .where((c) => c.code == code)
+              .map((c) => c.name)
+              .cast<String?>()
+              .firstOrNull ??
+          code;
+      out.add(RegistrationCourse(id: code.toLowerCase(), code: code, name: name));
     }
     return out;
   }
@@ -210,7 +242,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ThemeModeController.instance.setMode(mode);
   }
 
-  void _syncAiPreferences() {
+  Future<void> _syncAiPreferences() async {
+    try {
+      await AuthApi().updatePlannerPreferences(
+        studyGoal: _studyGoal,
+        preferredTime: _preferredTime,
+        preferredDays: _preferredDays,
+      );
+    } catch (_) {
+      // Keep local planner refresh even if persist fails (offline / old backend).
+    }
     AiStudyController.instance.updateProfilePreferences(
       studyGoal: _studyGoal,
       preferredTime: _preferredTime,
@@ -355,12 +396,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           TextButton.icon(
                             onPressed: () => showEditEnrolledCoursesSheet(
                               context: context,
-                              onSaved: () {
+                              onSaved: () async {
+                                if (!mounted) return;
+                                await AuthScope.of(context).refreshProfile();
+                                await _loadCourseCatalog();
                                 if (!mounted) return;
                                 setState(() {});
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('Courses updated for this session.'),
+                                    content: Text('Courses saved to your profile.'),
                                   ),
                                 );
                               },

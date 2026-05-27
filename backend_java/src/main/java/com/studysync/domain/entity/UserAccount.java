@@ -71,6 +71,16 @@ public class UserAccount implements UserDetails {
     @Column(name = "kvkk_accepted", nullable = false, columnDefinition = "boolean default false")
     private boolean kvkkAccepted = false;
 
+    /** Profile → Study Buddy / AI planner preferences (optional). */
+    @Column(name = "study_goal", length = 64)
+    private String studyGoal;
+
+    @Column(name = "preferred_time", length = 32)
+    private String preferredTime;
+
+    @Column(name = "preferred_days", length = 32)
+    private String preferredDays;
+
     // Antigravity Modification: Changed constructor from protected to public to fix compilation visibility errors
     public UserAccount() {}
 
@@ -148,6 +158,30 @@ public class UserAccount implements UserDetails {
 
     public void setEnrolledCourses(List<String> enrolledCourses) {
         this.enrolledCourses = enrolledCourses;
+    }
+
+    public String getStudyGoal() {
+        return studyGoal;
+    }
+
+    public void setStudyGoal(String studyGoal) {
+        this.studyGoal = studyGoal;
+    }
+
+    public String getPreferredTime() {
+        return preferredTime;
+    }
+
+    public void setPreferredTime(String preferredTime) {
+        this.preferredTime = preferredTime;
+    }
+
+    public String getPreferredDays() {
+        return preferredDays;
+    }
+
+    public void setPreferredDays(String preferredDays) {
+        this.preferredDays = preferredDays;
     }
 
     // --- UserDetails Methods ---

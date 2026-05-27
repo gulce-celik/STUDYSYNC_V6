@@ -235,7 +235,7 @@ public class DevDataInitializer {
                 alice.setYear(3);
                 alice.setResponsibilityScore(95);
                 alice.setKvkkAccepted(true);
-                alice.setEnrolledCourses(new java.util.ArrayList<>(List.of("CSE344", "CSE331", "CSE312", "MATH301")));
+                alice.setEnrolledCourses(new java.util.ArrayList<>(List.of("CSE344", "CSE331")));
 
                 UserAccount bob = new UserAccount();
                 bob.setName("Bob Jones");

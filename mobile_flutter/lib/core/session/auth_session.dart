@@ -15,6 +15,9 @@ class AuthSession {
   List<String> enrolledCourseCodes = [];
   bool userKvkkAccepted = false;
   bool isAdmin = false;
+  String? plannerStudyGoal;
+  String? plannerPreferredTime;
+  String? plannerPreferredDays;
 
   void clear() {
     accessToken = null;
@@ -29,5 +32,8 @@ class AuthSession {
     enrolledCourseCodes = [];
     userKvkkAccepted = false;
     isAdmin = false;
+    plannerStudyGoal = null;
+    plannerPreferredTime = null;
+    plannerPreferredDays = null;
   }
 }

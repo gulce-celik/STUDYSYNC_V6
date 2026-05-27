@@ -69,7 +69,7 @@ class ScheduleBlockMapper {
       case ScheduleBlockType.busy:
         return 'busy';
       case ScheduleBlockType.exam:
-        return 'busy';
+        return 'exam';
     }
   }
 
@@ -81,6 +81,8 @@ class ScheduleBlockMapper {
         return ScheduleBlockType.club;
       case 'busy':
         return ScheduleBlockType.busy;
+      case 'exam':
+        return ScheduleBlockType.exam;
       default:
         return null;
     }

@@ -26,9 +26,18 @@ backend_java/.gradle/
 .DS_Store
 Thumbs.db
 
-# Local / secrets
+# Local / secrets — NEVER commit real API keys
 .env
-*.log
+.env.local
+.env.*.local
+**/.env
+!**/.env.example
+
+# Python
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
 
 # Optional: uncomment to keep Cursor settings local-only
 # .cursor/

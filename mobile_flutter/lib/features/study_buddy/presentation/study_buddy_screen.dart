@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -66,11 +68,19 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
     _courseCode = ReservationMockData.courses.isNotEmpty ? ReservationMockData.courses.first.code : 'CSE344';
     _myListingCourse = _courseCode;
     _results = List.of(StudyBuddyMockData.buddies);
-    _prepareAiBuddySuggestion();
+    AiStudyController.instance.addListener(_onAiPlannerChanged);
+    _syncBuddyFromController();
+    unawaited(AiStudyController.instance.refreshFromServer());
+  }
+
+  void _onAiPlannerChanged() {
+    if (!mounted) return;
+    _syncBuddyFromController();
   }
 
   @override
   void dispose() {
+    AiStudyController.instance.removeListener(_onAiPlannerChanged);
     _myListingNote.dispose();
     _reportReason.dispose();
     _reportComment.dispose();
@@ -174,57 +184,20 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
     return true;
   }
 
-  Future<void> _prepareAiBuddySuggestion() async {
-    final controllerItems = AiStudyController.instance.suggestions;
-    String? suggestionMessage;
-    String? suggestedCourse;
-    String? suggestedSlot;
-    String? aiWeek;
-    final aiYear = _academicYearFromSession();
-
-    if (controllerItems.isNotEmpty) {
-      final first = controllerItems.first;
-      suggestionMessage = first.message;
-      suggestedCourse = first.courseCode;
-      suggestedSlot = _slotIdFromLabel(first.slotLabel);
-      aiWeek = _weekdayFromMessage(first.message) ?? _weekdayFromDateIso(first.dateIso);
-    }
-
-    try {
-      final weekly = await _scheduleApi.getWeekly();
-      if (!mounted) return;
-      final upcomingExam = _nearestUpcomingExam(weekly);
-      if (upcomingExam != null) {
-        final examCourse = (upcomingExam.courseCode ?? _extractCourseCode(upcomingExam.label) ?? '').toUpperCase();
-        final examDate = upcomingExam.examDate;
-        if (examCourse.isNotEmpty && examDate != null) {
-          suggestionMessage =
-              'AI Suggestion: You have a $examCourse exam on ${_formatDate(examDate)}. Find a study buddy for a focused revision session.';
-          suggestedCourse = examCourse;
-        }
-        setState(() {
-          _upcomingExamCourse = examCourse.isEmpty ? null : examCourse;
-          _upcomingExamDate = examDate;
-          _aiBuddySuggestion = suggestionMessage;
-          _suggestedCourseCode = suggestedCourse;
-          _suggestedSlotId = suggestedSlot;
-          _aiSuggestedWeekday = examDate != null ? _kShortDays[examDate.weekday - 1] : null;
-          _aiSuggestedYearLabel = aiYear;
-        });
-        return;
-      }
-    } on DioException {
-      // Keep local suggestion fallback.
-    } catch (_) {
-      // Keep local suggestion fallback.
-    }
-
+  void _syncBuddyFromController() {
+    final buddy = AiStudyController.instance.buddySuggestion;
+    final year = _academicYearFromSession();
     setState(() {
-      _aiBuddySuggestion = suggestionMessage ?? 'AI Suggestion: Try matching with a buddy for your next tough course this week.';
-      _suggestedCourseCode = suggestedCourse;
-      _suggestedSlotId = suggestedSlot;
-      _aiSuggestedWeekday = aiWeek;
-      _aiSuggestedYearLabel = aiYear;
+      _aiBuddySuggestion = buddy?.message ??
+          'AI Suggestion: Want to study with someone for your next course session?';
+      _suggestedCourseCode = buddy?.courseCode;
+      _suggestedSlotId = buddy?.slotId ?? _suggestedSlotId;
+      _aiSuggestedWeekday = buddy?.weekday;
+      _aiSuggestedYearLabel = year;
+      if (buddy?.focusFilter == 'Exam prep') {
+        _upcomingExamCourse = buddy?.courseCode;
+        _upcomingExamDate = buddy?.dateIso != null ? DateTime.tryParse(buddy!.dateIso!) : null;
+      }
     });
   }
 
@@ -810,11 +783,12 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                               _selectedYear = _aiSuggestedYearLabel!;
                             }
                             _minSessionMinutes = 120;
-                            if (_upcomingExamDate != null) {
-                              _minMatchScore = 70;
+                            final buddy = AiStudyController.instance.buddySuggestion;
+                            _minMatchScore = buddy?.minMatchScore ?? 0;
+                            _focusFilter = buddy?.focusFilter ?? '';
+                            if (_focusFilter.isEmpty && (buddy?.message.toLowerCase().contains('exam') ?? false)) {
                               _focusFilter = 'Exam prep';
-                            } else {
-                              _focusFilter = '';
+                              _minMatchScore = 70;
                             }
                             _showFilters = true;
                           });

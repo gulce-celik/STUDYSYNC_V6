@@ -28,6 +28,9 @@ public final class UserAccountMapper {
                 u.getYear(),
                 u.getResponsibilityScore(),
                 u.getEnrolledCourses(),
-                u.isKvkkAccepted());
+                u.isKvkkAccepted(),
+                u.getStudyGoal(),
+                u.getPreferredTime(),
+                u.getPreferredDays());
     }
 }

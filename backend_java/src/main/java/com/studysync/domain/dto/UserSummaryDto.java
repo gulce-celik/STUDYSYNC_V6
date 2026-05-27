@@ -18,4 +18,7 @@ public record UserSummaryDto(
         Integer year,
         Integer responsibilityScore,
         List<String> enrolledCourses,
-        Boolean kvkkAccepted) {}
+        Boolean kvkkAccepted,
+        String studyGoal,
+        String preferredTime,
+        String preferredDays) {}

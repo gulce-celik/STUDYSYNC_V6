@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../features/auth/data/auth_api.dart';
 import '../../features/notifications/data/notifications_controller.dart';
+import '../planner/ai_study_controller.dart';
 import '../session/auth_session.dart';
 import '../trust/responsibility_ledger.dart';
 
@@ -31,6 +32,7 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
     if (!AuthSession.instance.isAdmin) {
       NotificationsController.instance.refresh();
+      AiStudyController.instance.refreshFromServer();
     }
   }
 
@@ -82,6 +84,12 @@ class AuthController extends ChangeNotifier {
       session.enrolledCourseCodes = courses.map((e) => e.toString()).toList();
     }
     session.userKvkkAccepted = user['kvkkAccepted'] == true;
+    session.plannerStudyGoal = user['studyGoal']?.toString();
+    session.plannerPreferredTime = user['preferredTime']?.toString();
+    session.plannerPreferredDays = user['preferredDays']?.toString();
+    if (session.userScore != null) {
+      ResponsibilityLedger.instance.setHomeContext(mockOnly: session.userScore!);
+    }
   }
 
   void logout() {

@@ -5,6 +5,7 @@ package com.studysync.domain.service;
 import com.studysync.domain.dto.LoginRequestDto;
 import com.studysync.domain.dto.LoginResponseDto;
 import com.studysync.domain.dto.RegisterRequestDto;
+import com.studysync.domain.dto.UpdatePlannerPreferencesRequestDto;
 import com.studysync.domain.dto.UpdateCoursesRequestDto;
 import com.studysync.domain.dto.UserSummaryDto;
 import com.studysync.domain.dto.ChangePasswordRequestDto;
@@ -12,21 +13,27 @@ import com.studysync.domain.entity.UserAccount;
 import com.studysync.domain.exception.EmailAlreadyExistsException;
 import com.studysync.domain.exception.InvalidCredentialsException;
 import com.studysync.domain.exception.InvalidDomainException;
+import com.studysync.domain.mapper.UserAccountMapper;
+import com.studysync.domain.repository.CourseCatalogRepository;
 import com.studysync.domain.repository.UserAccountRepository;
 import com.studysync.security.JwtTokenProvider;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import com.studysync.domain.entity.PendingRegistration;
 import com.studysync.domain.repository.PendingRegistrationRepository;
 import com.studysync.domain.dto.ActionResultDto;
 import com.studysync.domain.dto.VerifyOtpRequestDto;
-import org.springframework.transaction.annotation.Transactional;
-import java.util.List;
 
 /**
  * Kimlik doğrulama ve kayıt — login JWT, refresh akışı, e-posta tekilliği.
@@ -50,6 +57,7 @@ public class AuthService {
     private final JwtTokenProvider jwtTokenProvider;
     private final PendingRegistrationRepository pendingRegistrationRepository;
     private final EmailService emailService;
+    private final CourseCatalogRepository courseCatalogRepository;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public AuthService(
@@ -58,13 +66,15 @@ public class AuthService {
             PasswordEncoder passwordEncoder,
             JwtTokenProvider jwtTokenProvider,
             PendingRegistrationRepository pendingRegistrationRepository,
-            EmailService emailService) {
+            EmailService emailService,
+            CourseCatalogRepository courseCatalogRepository) {
         this.userAccountRepository = userAccountRepository;
         this.referenceCatalogService = referenceCatalogService;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
         this.pendingRegistrationRepository = pendingRegistrationRepository;
         this.emailService = emailService;
+        this.courseCatalogRepository = courseCatalogRepository;
     }
 
     public LoginResponseDto login(LoginRequestDto request) {
@@ -80,20 +90,7 @@ public class AuthService {
         String accessToken = jwtTokenProvider.createAccessTokenForUserId(userAccount.getId());
         String refreshToken = jwtTokenProvider.createRefreshTokenValue();
 
-        final String deptName = referenceCatalogService
-                .resolveDepartmentName(userAccount.getDepartmentId())
-                .orElse(userAccount.getDepartmentId());
-
-        final UserSummaryDto summary = new UserSummaryDto(
-                String.valueOf(userAccount.getId()),
-                userAccount.getName(),
-                userAccount.getNickname(),
-                userAccount.getEmail(),
-                deptName,
-                userAccount.getYear(),
-                userAccount.getResponsibilityScore(),
-                userAccount.getEnrolledCourses(),
-                userAccount.isKvkkAccepted());
+        final UserSummaryDto summary = toSummary(userAccount);
 
         return new LoginResponseDto(accessToken, refreshToken, summary);
     }
@@ -204,19 +201,7 @@ public class AuthService {
         userAccountRepository.save(u);
         pendingRegistrationRepository.delete(pending);
 
-        final String deptName = referenceCatalogService
-                .resolveDepartmentName(u.getDepartmentId())
-                .orElse(u.getDepartmentId());
-        final UserSummaryDto summary = new UserSummaryDto(
-                String.valueOf(u.getId()),
-                u.getName(),
-                u.getNickname(),
-                u.getEmail(),
-                deptName,
-                u.getYear(),
-                u.getResponsibilityScore(),
-                u.getEnrolledCourses(),
-                u.isKvkkAccepted());
+        final UserSummaryDto summary = toSummary(u);
 
         String accessToken = jwtTokenProvider.createAccessTokenForUserId(u.getId());
         String refreshToken = jwtTokenProvider.createRefreshTokenValue();
@@ -230,20 +215,30 @@ public class AuthService {
     }
 
     public UserSummaryDto getCurrentUser(UserAccount currentUser) {
-        final String deptName = referenceCatalogService
-                .resolveDepartmentName(currentUser.getDepartmentId())
-                .orElse(currentUser.getDepartmentId());
+        return toSummary(currentUser);
+    }
 
-        return new UserSummaryDto(
-                String.valueOf(currentUser.getId()),
-                currentUser.getName(),
-                currentUser.getNickname(),
-                currentUser.getEmail(),
-                deptName,
-                currentUser.getYear(),
-                currentUser.getResponsibilityScore(),
-                currentUser.getEnrolledCourses(),
-                currentUser.isKvkkAccepted());
+    @Transactional
+    public void updatePlannerPreferences(UserAccount currentUser, UpdatePlannerPreferencesRequestDto request) {
+        UserAccount managed = userAccountRepository.findById(currentUser.getId())
+                .orElseThrow(() -> new RuntimeException("User not found: " + currentUser.getId()));
+        if (request.studyGoal() != null) {
+            managed.setStudyGoal(request.studyGoal().isBlank() ? null : request.studyGoal().trim());
+        }
+        if (request.preferredTime() != null) {
+            managed.setPreferredTime(request.preferredTime().isBlank() ? null : request.preferredTime().trim());
+        }
+        if (request.preferredDays() != null) {
+            managed.setPreferredDays(request.preferredDays().isBlank() ? null : request.preferredDays().trim());
+        }
+        userAccountRepository.saveAndFlush(managed);
+    }
+
+    private UserSummaryDto toSummary(UserAccount userAccount) {
+        final String deptName = referenceCatalogService
+                .resolveDepartmentName(userAccount.getDepartmentId())
+                .orElse(userAccount.getDepartmentId());
+        return UserAccountMapper.toSummary(userAccount, deptName);
     }
 
     @Transactional
@@ -257,15 +252,43 @@ public class AuthService {
 
     @Transactional
     public void updateEnrolledCourses(UserAccount currentUser, UpdateCoursesRequestDto request) {
-        // @AuthenticationPrincipal ile gelen nesne detached olabilir;
-        // veritabanından managed entity yükleyerek Hibernate takibini garanti ediyoruz.
         UserAccount managed = userAccountRepository.findById(currentUser.getId())
                 .orElseThrow(() -> new RuntimeException("User not found: " + currentUser.getId()));
-        
+
         List<String> incoming = request.courses() != null ? request.courses() : List.of();
+        if (incoming.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Select at least one course");
+        }
+
+        Set<String> catalogCodes = courseCatalogRepository.findAll().stream()
+                .map(c -> c.getCode())
+                .filter(code -> code != null && !code.isBlank())
+                .map(AuthService::normalizeCourseCode)
+                .collect(Collectors.toSet());
+
+        List<String> valid = new ArrayList<>();
+        for (String raw : incoming) {
+            if (raw == null || raw.isBlank()) {
+                continue;
+            }
+            String normalized = normalizeCourseCode(raw);
+            if (catalogCodes.contains(normalized)) {
+                valid.add(normalized);
+            }
+        }
+
+        if (valid.isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Courses must exist in the system catalog");
+        }
+
         managed.getEnrolledCourses().clear();
-        managed.getEnrolledCourses().addAll(incoming);
-        
+        managed.getEnrolledCourses().addAll(valid.stream().distinct().toList());
+
         userAccountRepository.saveAndFlush(managed);
+    }
+
+    private static String normalizeCourseCode(String code) {
+        return code.trim().toUpperCase(Locale.ROOT).replace("-", "");
     }
 }

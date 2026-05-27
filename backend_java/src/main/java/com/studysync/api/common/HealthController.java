@@ -27,6 +27,7 @@ public class HealthController {
                 "features",
                 List.of(
                         "study-buddy-reports",
+                        "ai-planner",
                         "lost-found",
                         "reservations",
                         "check-in"));

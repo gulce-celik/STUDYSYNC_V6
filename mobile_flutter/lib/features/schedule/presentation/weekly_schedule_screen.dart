@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
@@ -6,6 +8,8 @@ import '../../../core/session/auth_session.dart';
 import '../../auth/data/registration_mock_data.dart';
 import '../data/schedule_api.dart';
 import '../data/schedule_mock_data.dart';
+import '../widgets/draggable_schedule_ai_fab.dart';
+import 'schedule_ai_assistant_screen.dart';
 
 /// Figma / React `WeeklySchedule.tsx` ile hizalı haftalık ızgara.
 class WeeklyScheduleScreen extends StatefulWidget {
@@ -21,13 +25,19 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
   bool _loadingRemote = true;
   bool _usedFallback = false;
   bool _syncing = false;
+  Timer? _syncDebounce;
+
+  @override
+  void dispose() {
+    _syncDebounce?.cancel();
+    super.dispose();
+  }
 
   @override
   void initState() {
     super.initState();
     _blocks = List.from(ScheduleMockData.initialBlocks());
     _purgePastExams();
-    AiStudyController.instance.updateSchedule(_blocks);
     _loadFromBackend();
   }
 
@@ -47,7 +57,7 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
           _usedFallback = true;
         }
         _purgePastExams();
-        AiStudyController.instance.updateSchedule(_blocks);
+        _onBlocksChanged(syncImmediately: remote.isEmpty);
         _loadingRemote = false;
       });
     } on DioException {
@@ -55,7 +65,7 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
       setState(() {
         _blocks = List.from(ScheduleMockData.initialBlocks());
         _purgePastExams();
-        AiStudyController.instance.updateSchedule(_blocks);
+        _onBlocksChanged(syncImmediately: true);
         _usedFallback = true;
         _loadingRemote = false;
       });
@@ -64,24 +74,44 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
       setState(() {
         _blocks = List.from(ScheduleMockData.initialBlocks());
         _purgePastExams();
-        AiStudyController.instance.updateSchedule(_blocks);
+        _onBlocksChanged(syncImmediately: true);
         _usedFallback = true;
         _loadingRemote = false;
       });
     }
   }
 
-  Future<void> _syncToBackend() async {
+  /// Local preview + persist to API DB (H2 local or Neon prod) so AI planner sees the grid.
+  void _onBlocksChanged({bool syncImmediately = false}) {
+    AiStudyController.instance.updateSchedule(_blocks);
+    _syncDebounce?.cancel();
+    if (syncImmediately) {
+      unawaited(_syncToBackend(silent: true));
+      return;
+    }
+    _syncDebounce = Timer(const Duration(milliseconds: 700), () {
+      if (mounted) unawaited(_syncToBackend(silent: true));
+    });
+  }
+
+  Future<void> _syncToBackend({bool silent = false}) async {
     setState(() => _syncing = true);
     try {
       await _scheduleApi.putWeekly(_blocks);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Schedule saved on server')));
+      await AiStudyController.instance.refreshFromServer(force: true);
+      if (!silent && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Schedule saved — AI suggestions updated')),
+        );
+      }
     } on DioException {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not sync — check backend and login token')),
-      );
+      if (!silent) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not sync — check backend and login token')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _syncing = false);
     }
@@ -117,6 +147,12 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
       final d = DateTime(b.examDate!.year, b.examDate!.month, b.examDate!.day);
       return !d.isBefore(today);
     }).toList();
+  }
+
+  void _openAiAssistant() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const ScheduleAiAssistantScreen()),
+    );
   }
 
   void _openSheet(String day, String time) {
@@ -186,6 +222,7 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
                   setState(() {
                     _blocks.removeWhere((b) => b.day == day && b.timeSlot == time);
                   });
+                  _onBlocksChanged();
                   Navigator.pop(ctx);
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Slot cleared')));
                 },
@@ -221,7 +258,7 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
       _blocks.add(ScheduleBlock(day: day, timeSlot: time, type: type, label: label));
       _purgePastExams();
     });
-    AiStudyController.instance.updateSchedule(_blocks);
+    _onBlocksChanged();
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$day $time → $label')));
   }
 
@@ -273,7 +310,7 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
                       );
                       _purgePastExams();
                     });
-                    AiStudyController.instance.updateSchedule(_blocks);
+                    _onBlocksChanged();
                     Navigator.pop(ctx);
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('$day $time → Lesson ($code)')),
@@ -356,7 +393,7 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
                       );
                       _purgePastExams();
                     });
-                    AiStudyController.instance.updateSchedule(_blocks);
+                    _onBlocksChanged();
                     Navigator.pop(ctx);
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('$day $time → Exam ($code)')),
@@ -377,7 +414,9 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0B1220) : Colors.white,
-      body: Column(
+      body: Stack(
+        children: [
+          Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Material(
@@ -545,6 +584,9 @@ class _WeeklyScheduleScreenState extends State<WeeklyScheduleScreen> {
               },
             ),
           ),
+        ],
+      ),
+          DraggableScheduleAiFab(onTap: _openAiAssistant),
         ],
       ),
     );

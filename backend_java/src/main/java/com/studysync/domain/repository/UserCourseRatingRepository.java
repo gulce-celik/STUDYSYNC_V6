@@ -3,6 +3,7 @@
 package com.studysync.domain.repository;
 
 import com.studysync.domain.entity.UserCourseRatingEntity;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -12,4 +13,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface UserCourseRatingRepository extends JpaRepository<UserCourseRatingEntity, Long> {
 
     Optional<UserCourseRatingEntity> findByUser_IdAndCourseCode(Long userId, String courseCode);
+
+    List<UserCourseRatingEntity> findByUser_Id(Long userId);
 }

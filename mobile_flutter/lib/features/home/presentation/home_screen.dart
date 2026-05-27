@@ -45,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
     ResponsibilityLedger.instance.addListener(_onLedgerChanged);
     _loadDashboard();
     unawaited(NotificationsController.instance.refresh());
+    unawaited(AiStudyController.instance.refreshFromServer());
   }
 
   @override

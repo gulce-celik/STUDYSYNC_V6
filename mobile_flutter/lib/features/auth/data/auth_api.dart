@@ -192,4 +192,20 @@ class AuthApi {
       data: {'courses': courses},
     );
   }
+
+  /// [PUT /auth/me/planner-preferences] — AI planner profile inputs.
+  Future<void> updatePlannerPreferences({
+    String? studyGoal,
+    String? preferredTime,
+    String? preferredDays,
+  }) async {
+    await ApiClient.instance.dio.put<void>(
+      '/auth/me/planner-preferences',
+      data: {
+        if (studyGoal != null) 'studyGoal': studyGoal,
+        if (preferredTime != null) 'preferredTime': preferredTime,
+        if (preferredDays != null) 'preferredDays': preferredDays,
+      },
+    );
+  }
 }

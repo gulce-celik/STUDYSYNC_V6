@@ -1,12 +1,44 @@
-# STUDYSYNC-IMPLEMENTATION
+# StudySync V6
 
 StudySync is a student study area reservation and campus companion project with:
 - Flutter mobile app (`mobile_flutter`)
 - Spring Boot REST API (`backend_java`)
+- Python AI service (`backend_python`) — Gemini + scoring
 - React/Vite reference bundle (`src`, optional)
 
-**Repository:** [github.com/gulce-celik/STUDYSYNC-IMPLEMENTATION](https://github.com/gulce-celik/STUDYSYNC-IMPLEMENTATION)  
+**Repository:** [github.com/gulce-celik/STUDYSYNC_V6](https://github.com/gulce-celik/STUDYSYNC_V6)  
 **Figma reference:** [Student Study Area Manager](https://www.figma.com/design/KOzCzIz7zAv46CVtT8ibLx/Student-Study-Area-Manager)
+
+---
+
+## Secrets & `.env` (read this first)
+
+**Real API keys must never go to GitHub.**
+
+| File | Git? | Who creates it |
+|------|------|----------------|
+| `backend_python/.env.example` | Yes (template only) | Already in repo |
+| `backend_python/.env` | **No** — `.gitignore` | **Each developer locally** |
+
+### One-time setup (every machine)
+
+```powershell
+cd backend_python
+Copy-Item .env.example .env
+```
+
+Then open `backend_python/.env` and set your own key:
+
+```env
+GEMINI_API_KEY=your_key_from_google_ai_studio
+```
+
+Get a key: [Google AI Studio → Create API key](https://aistudio.google.com/apikey)
+
+**Rules:**
+- Do **not** commit `.env`, paste keys in chat/Slack, or put keys in Render env screenshots.
+- **Canlı (production):** key only in Render → Python Web Service → Environment Variables (see `docs/STUDYSYNC_AI.md`).
+- Python çalışmazsa uygulama açılır; AI kartları `scoring` / `scoring-fallback` moduna düşer.
 
 ---
 
@@ -16,7 +48,8 @@ StudySync is a student study area reservation and campus companion project with:
 |------|---------|
 | `mobile_flutter/` | Main mobile client (Flutter) |
 | `backend_java/` | Spring Boot API (`/api/v1`) |
-| `docs/` | API contract + handoff/decision documents |
+| `backend_python/` | FastAPI AI service (Gemini, port 8090) |
+| `docs/` | API contract, AI deploy guide (`STUDYSYNC_AI.md`) |
 | `src/` | Legacy/reference React UI (optional) |
 
 ---
@@ -24,15 +57,17 @@ StudySync is a student study area reservation and campus companion project with:
 ## Clone
 
 ```bash
-git clone https://github.com/gulce-celik/STUDYSYNC-IMPLEMENTATION.git
-cd STUDYSYNC-IMPLEMENTATION
+git clone https://github.com/gulce-celik/STUDYSYNC_V6.git
+cd STUDYSYNC_V6
 ```
 
 SSH alternative:
 
 ```bash
-git clone git@github.com:gulce-celik/STUDYSYNC-IMPLEMENTATION.git
+git clone git@github.com:gulce-celik/STUDYSYNC_V6.git
 ```
+
+After clone: create `backend_python/.env` from `.env.example` (see **Secrets & `.env`** above).
 
 ---
 
@@ -41,6 +76,7 @@ git clone git@github.com:gulce-celik/STUDYSYNC-IMPLEMENTATION.git
 - Flutter stable + Dart SDK
 - JDK 21
 - Maven (or use wrapper scripts in `backend_java`)
+- Python 3.11+ (AI service)
 - Android Studio (SDK, platform tools, emulator)
 - Optional: Node.js (only for `src/` reference web bundle)
 
@@ -49,15 +85,56 @@ Recommended quick checks:
 ```bash
 flutter doctor
 java -version
+python --version
 mvn -version
 ```
 
 ---
 
-## Stable Run Guide (Backend + Mobile)  
-This section is optimized to avoid emulator freezes/black screen issues during demo use.
+## Stable Run Guide (Backend + AI + Mobile)
 
-### 1) Start backend first
+### 1) Python AI (8090) — requires `.env`
+
+```powershell
+cd backend_python
+Copy-Item .env.example .env   # first time only; edit GEMINI_API_KEY inside .env
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8090 --reload
+```
+
+Check: http://localhost:8090/health
+
+### 2) Java API (8080)
+
+From repository root:
+
+```powershell
+cd backend_java
+.\mvnw.cmd spring-boot:run
+```
+
+Expected:
+- Backend runs on `http://localhost:8080`
+- API base prefix is `/api/v1`
+- H2 in-memory DB is used for development (`dev` profile)
+
+### 3) Flutter (emulator → local Java + Python)
+
+```powershell
+cd mobile_flutter
+flutter pub get
+flutter run -d emulator-5554 --dart-define=API_BASE=http://10.0.2.2:8080/api/v1
+```
+
+Without `--dart-define`, the app uses the **live Render** API (see `app_config.dart`).
+
+**AI docs (deploy, scoring, guided chat):** `docs/STUDYSYNC_AI.md`
+
+---
+
+## Stable Run Guide (legacy — Java + Mobile only)
 
 From repository root:
 
