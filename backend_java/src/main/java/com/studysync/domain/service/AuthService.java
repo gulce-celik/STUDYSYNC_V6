@@ -9,12 +9,16 @@ import com.studysync.domain.dto.UpdatePlannerPreferencesRequestDto;
 import com.studysync.domain.dto.UpdateCoursesRequestDto;
 import com.studysync.domain.dto.UserSummaryDto;
 import com.studysync.domain.dto.ChangePasswordRequestDto;
+import com.studysync.domain.dto.ForgotPasswordRequestDto;
 import com.studysync.domain.entity.UserAccount;
+import com.studysync.domain.entity.PasswordResetToken;
 import com.studysync.domain.exception.EmailAlreadyExistsException;
 import com.studysync.domain.exception.InvalidCredentialsException;
 import com.studysync.domain.exception.InvalidDomainException;
+import com.studysync.domain.exception.UserNotFoundException;
 import com.studysync.domain.mapper.UserAccountMapper;
 import com.studysync.domain.repository.CourseCatalogRepository;
+import com.studysync.domain.repository.PasswordResetTokenRepository;
 import com.studysync.domain.repository.UserAccountRepository;
 import com.studysync.security.JwtTokenProvider;
 import org.springframework.http.HttpStatus;
@@ -29,6 +33,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import com.studysync.domain.entity.PendingRegistration;
 import com.studysync.domain.repository.PendingRegistrationRepository;
@@ -58,6 +63,7 @@ public class AuthService {
     private final PendingRegistrationRepository pendingRegistrationRepository;
     private final EmailService emailService;
     private final CourseCatalogRepository courseCatalogRepository;
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public AuthService(
@@ -67,7 +73,8 @@ public class AuthService {
             JwtTokenProvider jwtTokenProvider,
             PendingRegistrationRepository pendingRegistrationRepository,
             EmailService emailService,
-            CourseCatalogRepository courseCatalogRepository) {
+            CourseCatalogRepository courseCatalogRepository,
+            PasswordResetTokenRepository passwordResetTokenRepository) {
         this.userAccountRepository = userAccountRepository;
         this.referenceCatalogService = referenceCatalogService;
         this.passwordEncoder = passwordEncoder;
@@ -75,6 +82,7 @@ public class AuthService {
         this.pendingRegistrationRepository = pendingRegistrationRepository;
         this.emailService = emailService;
         this.courseCatalogRepository = courseCatalogRepository;
+        this.passwordResetTokenRepository = passwordResetTokenRepository;
     }
 
     public LoginResponseDto login(LoginRequestDto request) {
@@ -286,6 +294,66 @@ public class AuthService {
         managed.getEnrolledCourses().addAll(valid.stream().distinct().toList());
 
         userAccountRepository.saveAndFlush(managed);
+    }
+
+    @Transactional
+    public void forgotPassword(ForgotPasswordRequestDto request, String backendBaseUrl) {
+        String email = request.email().trim().toLowerCase();
+        UserAccount user = userAccountRepository.findByEmailIgnoreCase(email)
+                .orElseThrow(() -> new UserNotFoundException("No user found registered with this email address."));
+
+        // Delete any existing tokens for this email before issuing a new OTP.
+        passwordResetTokenRepository.deleteByEmailIgnoreCase(email);
+
+        String otp = String.format("%06d", secureRandom.nextInt(1000000));
+        PasswordResetToken resetToken = new PasswordResetToken(
+                otp,
+                email,
+                LocalDateTime.now().plusMinutes(15));
+        passwordResetTokenRepository.save(resetToken);
+
+        emailService.sendPasswordResetEmail(email, otp);
+    }
+
+    @Transactional
+    public void resetPassword(String token, String newPassword) {
+        PasswordResetToken resetToken = passwordResetTokenRepository.findByToken(token)
+                .orElseThrow(() -> new RuntimeException("Invalid or expired password reset link."));
+
+        if (resetToken.isExpired()) {
+            passwordResetTokenRepository.delete(resetToken);
+            throw new RuntimeException("Password reset link has expired.");
+        }
+
+        UserAccount user = userAccountRepository.findByEmailIgnoreCase(resetToken.getEmail())
+                .orElseThrow(() -> new RuntimeException("User not found."));
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        userAccountRepository.save(user);
+        passwordResetTokenRepository.delete(resetToken);
+    }
+
+    @Transactional
+    public void resetPasswordOtp(String email, String otpCode, String newPassword) {
+        String normalizedEmail = email.trim().toLowerCase();
+        PasswordResetToken resetToken = passwordResetTokenRepository.findByEmailIgnoreCase(normalizedEmail)
+                .orElseThrow(() -> new RuntimeException("Invalid or expired verification code."));
+
+        if (resetToken.isExpired()) {
+            passwordResetTokenRepository.delete(resetToken);
+            throw new RuntimeException("Verification code has expired. Please request a new code.");
+        }
+
+        if (!resetToken.getToken().equals(otpCode.trim())) {
+            throw new RuntimeException("Invalid verification code.");
+        }
+
+        UserAccount user = userAccountRepository.findByEmailIgnoreCase(normalizedEmail)
+                .orElseThrow(() -> new RuntimeException("User not found."));
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        userAccountRepository.save(user);
+        passwordResetTokenRepository.delete(resetToken);
     }
 
     private static String normalizeCourseCode(String code) {
