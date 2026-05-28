@@ -18,7 +18,7 @@ import '../../notifications/data/notifications_controller.dart';
 import '../../notifications/presentation/widgets/notification_bell_button.dart';
 import '../data/home_mock_data.dart';
 
-/// Figma / React `Home.tsx` — hero, sorumluluk rozeti, study tip, gradient quick actions, upcoming, davetler.
+/// Figma / React `Home.tsx` — hero, sorumluluk rozeti, gradient quick actions, upcoming, davetler.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -217,7 +217,15 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           const Text('StudySync', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
                           const SizedBox(height: 4),
-                          Text('Welcome, $firstName! 👋', style: const TextStyle(color: Color(0xFFDBEAFE), fontSize: 12)),
+                          Text(
+                            'Welcome, $firstName!',
+                            style: const TextStyle(
+                              color: Color(0xFFDBEAFE),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              height: 1.25,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -236,7 +244,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           const Icon(Icons.emoji_events_rounded, color: Color(0xFFFDE047), size: 16),
                           const SizedBox(width: 4),
                           Text('$displayScore%',
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13)),
                         ],
                       ),
                     ),
@@ -256,64 +264,10 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: isDark
-                          ? const [Color(0xFF1F2937), Color(0xFF111827)]
-                          : const [Color(0xFFFFFBEB), Color(0xFFFFF7ED)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: isDark ? const Color(0xFF374151) : const Color(0xFFFED7AA)),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF97316),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.trending_up_rounded, color: Colors.white, size: 22),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '💡 Study Tip',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 13,
-                                color: isDark ? Colors.white : Colors.black,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Your peak productivity is 9-11 AM. Reserve morning slots for better focus!',
-                              style: TextStyle(
-                                fontSize: 11,
-                                height: 1.4,
-                                color: isDark ? const Color(0xFFD1D5DB) : const Color(0xFF374151),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
                 const Text('Quick Actions', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 10),
                 GridView.count(
@@ -405,7 +359,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 child: Text(
                                   '2h plan',
                                   style: TextStyle(
-                                    fontSize: 10,
+                                    fontSize: 11,
                                     fontWeight: FontWeight.w700,
                                     color: isDark ? Colors.white : const Color(0xFF1E40AF),
                                   ),
@@ -417,8 +371,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           Text(
                             s.message,
                             style: TextStyle(
-                              fontSize: 12,
-                              height: 1.35,
+                              fontSize: 13,
+                              height: 1.4,
                               color: isDark ? const Color(0xFFD1D5DB) : const Color(0xFF374151),
                             ),
                           ),
@@ -435,7 +389,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     backgroundColor: const Color(0xFF2563EB),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                   ),
-                                  child: const Text('Accept'),
+                                  child: const Text('Accept', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -446,7 +400,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     side: BorderSide(color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                   ),
-                                  child: const Text('Reject'),
+                                  child: const Text('Reject', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
                                 ),
                               ),
                             ],
@@ -466,7 +420,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         onPressed: () => Navigator.of(context).push<void>(
                               MaterialPageRoute<void>(builder: (_) => const MyBookingsScreen()),
                             ),
-                        child: const Text('View All →', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                        child: const Text('View All →', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
                       ),
                     ],
                   ),
@@ -481,17 +435,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: const Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.qr_code_2_rounded, size: 18, color: Color(0xFFD97706)),
+                        Icon(Icons.qr_code_2_rounded, size: 20, color: Color(0xFFD97706)),
                         SizedBox(width: 8),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Check-In Required', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11)),
+                              Text('Check-In Required', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
                               SizedBox(height: 4),
                               Text(
                                 'Use QR Check In within 15 minutes of your session start time. Late check-ins result in automatic cancellation and score penalty.',
-                                style: TextStyle(fontSize: 10, height: 1.35, color: Color(0xFF92400E)),
+                                style: TextStyle(fontSize: 12, height: 1.4, color: Color(0xFF92400E)),
                               ),
                             ],
                           ),
@@ -528,7 +482,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                           children: [
                                             const Icon(Icons.schedule_rounded, size: 14, color: Color(0xFF6B7280)),
                                             const SizedBox(width: 4),
-                                            Text(r.timeSlot, style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280))),
+                                            Text(r.timeSlot, style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
                                           ],
                                         ),
                                       ],
@@ -545,7 +499,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     child: Text(
                                       r.type == ReservationKind.individual ? '👤 Solo' : '👥 Group',
                                       style: TextStyle(
-                                        fontSize: 10,
+                                        fontSize: 11,
                                         fontWeight: FontWeight.w800,
                                         color: r.type == ReservationKind.individual
                                             ? const Color(0xFF1D4ED8)
@@ -559,7 +513,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text(r.date, style: const TextStyle(fontSize: 10, color: Color(0xFF9CA3AF))),
+                                  Text(r.date, style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
                                   if (_checkedInSessionIds.contains(r.id))
                                     const Row(
                                       children: [
@@ -568,7 +522,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         Text(
                                           'Checked in',
                                           style: TextStyle(
-                                            fontSize: 10,
+                                            fontSize: 11,
                                             fontWeight: FontWeight.w700,
                                             color: Color(0xFF15803D),
                                           ),
@@ -610,7 +564,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                                     Text(
                                                       'QR Check In →',
                                                       style: TextStyle(
-                                                        fontSize: 10,
+                                                        fontSize: 11,
                                                         fontWeight: FontWeight.w700,
                                                         color: canCheckIn
                                                             ? Colors.blue.shade700
@@ -622,7 +576,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                                 if (hint != null)
                                                   Text(
                                                     hint,
-                                                    style: const TextStyle(fontSize: 9, color: Color(0xFF9CA3AF)),
+                                                    style: const TextStyle(fontSize: 10, color: Color(0xFF9CA3AF)),
                                                   ),
                                               ],
                                             ),
@@ -670,7 +624,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text('Group Study Invitation',
-                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF7E22CE))),
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF7E22CE))),
                           const SizedBox(height: 4),
                           Text('${inv.inviterName} invited you',
                               style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
@@ -685,11 +639,11 @@ class _HomeScreenState extends State<HomeScreen> {
                             children: [
                               const Icon(Icons.calendar_today_rounded, size: 12, color: Color(0xFF6B7280)),
                               const SizedBox(width: 4),
-                              Text(inv.date, style: const TextStyle(fontSize: 10, color: Color(0xFF6B7280))),
+                              Text(inv.date, style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280))),
                               const SizedBox(width: 12),
                               const Icon(Icons.schedule_rounded, size: 12, color: Color(0xFF6B7280)),
                               const SizedBox(width: 4),
-                              Text(inv.slot, style: const TextStyle(fontSize: 10, color: Color(0xFF6B7280))),
+                              Text(inv.slot, style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280))),
                             ],
                           ),
                           const SizedBox(height: 8),
@@ -699,7 +653,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             decoration: BoxDecoration(color: const Color(0xFFF3E8FF), borderRadius: BorderRadius.circular(8)),
                             child: Text(
                               'Expires in: ${inv.expiresInMinutes} minutes',
-                              style: const TextStyle(fontSize: 10, color: Color(0xFF6B21A8), fontWeight: FontWeight.w700),
+                              style: const TextStyle(fontSize: 11, color: Color(0xFF6B21A8), fontWeight: FontWeight.w700),
                             ),
                           ),
                           const SizedBox(height: 10),
@@ -762,7 +716,7 @@ class _StatBox extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(value, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800)),
-          Text(label, style: const TextStyle(color: Color(0xFFDBEAFE), fontSize: 9)),
+          Text(label, style: const TextStyle(color: Color(0xFFDBEAFE), fontSize: 11)),
         ],
       ),
     );
@@ -819,7 +773,7 @@ class _QuickAction extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700,
                   height: 1.15,
                   color: isDark ? const Color(0xFFE5E7EB) : const Color(0xFF1F2937),
