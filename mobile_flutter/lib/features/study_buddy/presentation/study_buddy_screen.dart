@@ -9,7 +9,7 @@ import '../../../core/demo/buddy_interaction_log.dart';
 import '../../../core/planner/ai_study_controller.dart';
 import '../../../core/session/auth_session.dart';
 import '../../../core/trust/responsibility_ledger.dart';
-import '../../reservation/data/reservation_mock_data.dart';
+import '../../reservation/data/reservation_mock_data.dart' show ReservationMockData, TimeSlot;
 import '../../schedule/data/schedule_api.dart';
 import '../../schedule/data/schedule_mock_data.dart';
 import '../data/study_buddy_api.dart';
@@ -247,6 +247,148 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
         borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
       ),
     );
+  }
+
+  static const TextStyle _sectionChipTextStyle = TextStyle(fontWeight: FontWeight.w700, fontSize: 12);
+
+  Widget _sectionTabLabel(String title, {int badgeCount = 0, required bool selected}) {
+    final badgeColor = selected ? const Color(0xFF2563EB) : const Color(0xFF94A3B8);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Flexible(
+          child: Text(
+            title,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+            style: _sectionChipTextStyle,
+          ),
+        ),
+        if (badgeCount > 0) ...[
+          const SizedBox(width: 4),
+          Container(
+            constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(
+              color: badgeColor.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Text(
+              '$badgeCount',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: selected ? const Color(0xFF1D4ED8) : const Color(0xFF64748B),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  List<DropdownMenuItem<String>> _courseDropdownItems() {
+    return ReservationMockData.courses
+        .map(
+          (c) => DropdownMenuItem(
+            value: c.code,
+            child: Text(
+              '${c.code} — ${c.name}',
+              overflow: TextOverflow.ellipsis,
+              maxLines: 2,
+              style: const TextStyle(fontSize: 13, height: 1.25),
+            ),
+          ),
+        )
+        .toList();
+  }
+
+  List<Widget> _courseSelectedItemBuilders() {
+    return ReservationMockData.courses
+        .map(
+          (c) => Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              c.code,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+          ),
+        )
+        .toList();
+  }
+
+  DateTime? _parseListingDateIso(String iso) {
+    if (iso.isEmpty) return null;
+    final parts = iso.split('-');
+    if (parts.length != 3) return null;
+    final y = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    final d = int.tryParse(parts[2]);
+    if (y == null || m == null || d == null) return null;
+    return DateTime(y, m, d);
+  }
+
+  String _formatListingDateDisplay(String iso) {
+    final dt = _parseListingDateIso(iso);
+    if (dt == null) return iso;
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return '${days[dt.weekday - 1]}, ${dt.day} ${months[dt.month - 1]} ${dt.year}';
+  }
+
+  int? _slotStartMinutesFromLabel(String label) {
+    final m = RegExp(r'(\d{1,2}):(\d{2})').firstMatch(label);
+    if (m == null) return null;
+    return int.parse(m.group(1)!) * 60 + int.parse(m.group(2)!);
+  }
+
+  /// Slots still in the future for the selected listing date (today → hide elapsed windows).
+  List<TimeSlot> _availableListingSlots() {
+    final date = _parseListingDateIso(_myListingPreferredWeekday);
+    if (date == null) return ReservationMockData.timeSlots;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final selected = DateTime(date.year, date.month, date.day);
+    if (selected.isAfter(today)) return ReservationMockData.timeSlots;
+
+    final nowMinutes = now.hour * 60 + now.minute;
+    return ReservationMockData.timeSlots.where((s) {
+      final start = _slotStartMinutesFromLabel(s.label);
+      if (start == null) return true;
+      return start > nowMinutes;
+    }).toList();
+  }
+
+  void _syncListingSlotToSelectedDate({bool notifyIfNone = false}) {
+    final available = _availableListingSlots();
+    if (available.isEmpty) {
+      if (notifyIfNone && _myListingPreferredWeekday.isNotEmpty) {
+        _toast('No time slots left on this day. Pick a later date.');
+      }
+      return;
+    }
+    if (!available.any((s) => s.id == _myListingPreferredSlotId)) {
+      _myListingPreferredSlotId = available.first.id;
+    }
+  }
+
+  bool _listingDateTimeIsInPast() {
+    final date = _parseListingDateIso(_myListingPreferredWeekday);
+    if (date == null) return false;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final selected = DateTime(date.year, date.month, date.day);
+    if (selected.isBefore(today)) return true;
+    if (selected.isAfter(today)) return false;
+
+    final available = _availableListingSlots();
+    return !available.any((s) => s.id == _myListingPreferredSlotId);
   }
 
   bool _passesLocalFilters(StudyBuddyMockRow row) {
@@ -577,29 +719,27 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
         children: [
           Expanded(
             child: ChoiceChip(
-              label: const Text('Find', style: TextStyle(fontWeight: FontWeight.w700)),
+              label: _sectionTabLabel('Find', selected: _sectionIndex == 0),
               selected: _sectionIndex == 0,
               onSelected: _loading ? null : (_) => setState(() => _sectionIndex = 0),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Expanded(
             child: ChoiceChip(
-              label: Text(
-                'My Listings ($activeCount)',
-                style: const TextStyle(fontWeight: FontWeight.w700),
+              label: _sectionTabLabel(
+                'Listings',
+                badgeCount: activeCount,
+                selected: _sectionIndex == 1,
               ),
               selected: _sectionIndex == 1,
               onSelected: _loading ? null : (_) => setState(() => _sectionIndex = 1),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Expanded(
             child: ChoiceChip(
-              label: const Text(
-                'Previous',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
+              label: _sectionTabLabel('Previous', selected: _sectionIndex == 2),
               selected: _sectionIndex == 2,
               onSelected: _loading ? null : (_) => setState(() => _sectionIndex = 2),
             ),
@@ -700,20 +840,15 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                 Text('Course', style: _filterLabelStyle(isDark)),
                 const SizedBox(height: 6),
                 DropdownButtonFormField<String>(
+                  isExpanded: true,
                   value: _myListingCourse.isEmpty ? null : _myListingCourse,
                   style: TextStyle(
                     fontSize: 14,
                     color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
                   ),
                   decoration: _filterFieldDecoration(isDark),
-                  items: ReservationMockData.courses
-                      .map(
-                        (c) => DropdownMenuItem(
-                          value: c.code,
-                          child: Text('${c.code} — ${c.name}', style: const TextStyle(fontSize: 13)),
-                        ),
-                      )
-                      .toList(),
+                  selectedItemBuilder: (_) => _courseSelectedItemBuilders(),
+                  items: _courseDropdownItems(),
                   onChanged: (v) => setState(() => _myListingCourse = v ?? ''),
                 ),
                 const SizedBox(height: 10),
@@ -745,22 +880,31 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                 ),
                 const SizedBox(height: 10),
                 Text('Preferred date (optional)', style: _filterLabelStyle(isDark)),
+                const SizedBox(height: 4),
+                Text(
+                  'Today or a future date only. Past time slots are hidden for today.',
+                  style: TextStyle(
+                    fontSize: 10,
+                    height: 1.3,
+                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF6B7280),
+                  ),
+                ),
                 const SizedBox(height: 6),
                 InkWell(
                   onTap: () async {
                     final now = DateTime.now();
                     final todayDate = DateTime(now.year, now.month, now.day);
-                    final sundayDate = todayDate.add(Duration(days: 7 - now.weekday));
                     final picked = await showDatePicker(
                       context: context,
                       initialDate: todayDate,
                       firstDate: todayDate,
-                      lastDate: sundayDate,
+                      lastDate: todayDate.add(const Duration(days: 60)),
                     );
                     if (picked != null) {
                       setState(() {
                         _myListingPreferredWeekday =
-                            "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
+                            '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+                        _syncListingSlotToSelectedDate(notifyIfNone: true);
                       });
                     }
                   },
@@ -786,7 +930,7 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                           child: Text(
                             _myListingPreferredWeekday.isEmpty
                                 ? 'Select Preferred Date'
-                                : _myListingPreferredWeekday,
+                                : _formatListingDateDisplay(_myListingPreferredWeekday),
                             style: TextStyle(
                               fontSize: 13,
                               color: _myListingPreferredWeekday.isEmpty
@@ -815,22 +959,61 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                 const SizedBox(height: 10),
                 Text('Preferred time on campus (optional)', style: _filterLabelStyle(isDark)),
                 const SizedBox(height: 6),
-                DropdownButtonFormField<String>(
-                  value: _myListingPreferredSlotId,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
-                  ),
-                  decoration: _filterFieldDecoration(isDark),
-                  items: ReservationMockData.timeSlots
-                      .map(
-                        (s) => DropdownMenuItem(
-                          value: s.id,
-                          child: Text(s.label, style: const TextStyle(fontSize: 13, height: 1.2)),
+                Builder(
+                  builder: (context) {
+                    final slots = _availableListingSlots();
+                    if (slots.isEmpty && _myListingPreferredWeekday.isNotEmpty) {
+                      return Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFFFF7ED),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isDark ? const Color(0xFF475569) : const Color(0xFFFED7AA),
+                          ),
                         ),
-                      )
-                      .toList(),
-                  onChanged: (v) => setState(() => _myListingPreferredSlotId = v ?? _myListingPreferredSlotId),
+                        child: Text(
+                          'No future time slots left today. Pick tomorrow or clear the date.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? const Color(0xFFFCD34D) : const Color(0xFFB45309),
+                          ),
+                        ),
+                      );
+                    }
+                    final slotValue = slots.any((s) => s.id == _myListingPreferredSlotId)
+                        ? _myListingPreferredSlotId
+                        : (slots.isNotEmpty ? slots.first.id : null);
+                    return DropdownButtonFormField<String>(
+                      isExpanded: true,
+                      value: slotValue,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                      ),
+                      decoration: _filterFieldDecoration(isDark),
+                      items: slots
+                          .map(
+                            (s) => DropdownMenuItem(
+                              value: s.id,
+                              child: Text(
+                                s.label,
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 2,
+                                style: const TextStyle(fontSize: 13, height: 1.2),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: slots.isEmpty
+                          ? null
+                          : (v) {
+                              if (v == null) return;
+                              setState(() => _myListingPreferredSlotId = v);
+                            },
+                    );
+                  },
                 ),
                 const SizedBox(height: 10),
                 Text('Note (optional)', style: _filterLabelStyle(isDark)),
@@ -941,7 +1124,8 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                 break;
               }
             }
-            
+            final dayDisplay = day.isNotEmpty ? _formatListingDateDisplay(day) : '';
+
             return Card(
               margin: const EdgeInsets.only(bottom: 10),
               color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
@@ -1001,11 +1185,13 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                       'Goal: $purpose',
                       style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                     ),
-                    if (day.isNotEmpty || slotLabel.isNotEmpty) ...[
+                    if (dayDisplay.isNotEmpty || slotLabel.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
-                        'Prefers: ${[if (day.isNotEmpty) day, if (slotLabel.isNotEmpty) slotLabel].join(' · ')}',
+                        'Prefers: ${[if (dayDisplay.isNotEmpty) dayDisplay, if (slotLabel.isNotEmpty) slotLabel].join(' · ')}',
                         style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                     if (note.isNotEmpty) ...[
@@ -1013,6 +1199,8 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                       Text(
                         'Note: "$note"',
                         style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                     if (isActive) ...[
@@ -1244,6 +1432,23 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
       _toast('Select what you are studying for (exam, project, etc.).');
       return;
     }
+    if (_myListingPreferredWeekday.isNotEmpty) {
+      final d = _parseListingDateIso(_myListingPreferredWeekday);
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      if (d != null && DateTime(d.year, d.month, d.day).isBefore(today)) {
+        _toast('Choose today or a future date.');
+        return;
+      }
+      if (_listingDateTimeIsInPast()) {
+        _toast('That date and time are in the past. Pick a future time slot.');
+        return;
+      }
+      if (_availableListingSlots().isEmpty) {
+        _toast('No time slots left on this day. Pick a later date.');
+        return;
+      }
+    }
 
     setState(() => _loading = true);
 
@@ -1409,8 +1614,8 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                       border: Border.all(color: isDark ? const Color(0xFF475569) : const Color(0xFFFDE68A)),
                     ),
                     child: Text(
-                      'Sample buddies shown — GET /study-buddies/suggestions is empty or offline. '
-                      'Backend should implement matching for live API results.',
+                      'Sample buddies shown — no live matches from the server yet (empty list or offline). '
+                      'When Java + DB are up and others post listings for the same course, scores come from live matching.',
                       style: TextStyle(fontSize: 11, height: 1.35, color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF92400E)),
                     ),
                   ),
@@ -1662,6 +1867,7 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                         Text('Time window (campus hours)', style: _filterLabelStyle(isDark)),
                         const SizedBox(height: 6),
                         DropdownButtonFormField<String>(
+                          isExpanded: true,
                           value: _slotId,
                           style: TextStyle(
                             fontSize: 15,
@@ -1671,7 +1877,12 @@ class _StudyBuddyScreenState extends State<StudyBuddyScreen> {
                           items: ReservationMockData.timeSlots
                               .map((s) => DropdownMenuItem(
                                     value: s.id,
-                                    child: Text(s.label, style: const TextStyle(fontSize: 14, height: 1.2)),
+                                    child: Text(
+                                      s.label,
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 2,
+                                      style: const TextStyle(fontSize: 14, height: 1.2),
+                                    ),
                                   ))
                               .toList(),
                           onChanged: (v) => setState(() => _slotId = v ?? _slotId),
