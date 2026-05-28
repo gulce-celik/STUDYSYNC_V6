@@ -349,7 +349,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text('Responsibility Score', style: TextStyle(color: Colors.white.withValues(alpha: 0.95), fontSize: 10)),
+                                      Text(
+                                        'Responsibility Score',
+                                        style: TextStyle(
+                                          color: isDark ? const Color(0xFFE9D5FF) : const Color(0xFF4C1D95),
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.2,
+                                        ),
+                                      ),
                                       const Icon(Icons.emoji_events_rounded, color: Color(0xFFFDE047), size: 18),
                                     ],
                                   ),
@@ -392,7 +400,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('My Courses', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+                          Text(
+                            'My Courses',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 15,
+                              color: isDark ? const Color(0xFFE5E7EB) : const Color(0xFF111827),
+                            ),
+                          ),
                           TextButton.icon(
                             onPressed: () => showEditEnrolledCoursesSheet(
                               context: context,
