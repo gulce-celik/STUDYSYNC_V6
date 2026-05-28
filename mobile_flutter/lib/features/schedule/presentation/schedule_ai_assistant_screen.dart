@@ -118,13 +118,19 @@ class _ScheduleAiAssistantScreenState extends State<ScheduleAiAssistantScreen> {
   }
 
   void _scrollToEnd() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    void jump() {
       if (!_scroll.hasClients) return;
-      _scroll.animateTo(
-        _scroll.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 280),
-        curve: Curves.easeOut,
-      );
+      final target = _scroll.position.maxScrollExtent;
+      if (target <= 0) return;
+      _scroll.jumpTo(target);
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      jump();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        jump();
+        Future<void>.delayed(const Duration(milliseconds: 120), jump);
+      });
     });
   }
 
@@ -266,15 +272,20 @@ class _ScheduleAiAssistantScreenState extends State<ScheduleAiAssistantScreen> {
           Expanded(
             child: ListView.builder(
               controller: _scroll,
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+              cacheExtent: 800,
               itemCount: _lines.length,
               itemBuilder: (context, i) => _MessageBubble(
                 line: _lines[i],
                 isDark: isDark,
-                showAiBadge: ! _lines[i].isUser &&
-                    ! _lines[i].isTyping &&
+                showAiBadge: !_lines[i].isUser &&
+                    !_lines[i].isTyping &&
                     i == _lines.length - 1 &&
-                    _lastSource == 'gemini',
+                    (_lastSource == 'gemini' || _lastSource == 'cache'),
+                showOfflineTip: !_lines[i].isUser &&
+                    !_lines[i].isTyping &&
+                    i == _lines.length - 1 &&
+                    (_lastSource == 'scoring' || _lastSource == 'scoring-fallback'),
               ),
             ),
           ),
@@ -305,11 +316,13 @@ class _MessageBubble extends StatelessWidget {
     required this.line,
     required this.isDark,
     required this.showAiBadge,
+    required this.showOfflineTip,
   });
 
   final _ChatLine line;
   final bool isDark;
   final bool showAiBadge;
+  final bool showOfflineTip;
 
   @override
   Widget build(BuildContext context) {
@@ -349,10 +362,13 @@ class _MessageBubble extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!isUser) ...[
-            _BotAvatar(isDark: isDark),
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: _BotAvatar(isDark: isDark),
+            ),
             const SizedBox(width: 8),
           ],
           Flexible(
@@ -378,19 +394,57 @@ class _MessageBubble extends StatelessWidget {
                         ? null
                         : Border.all(color: isDark ? const Color(0xFF374151) : const Color(0xFFE5E7EB)),
                   ),
-                  child: Text(
-                    line.text,
-                    style: TextStyle(
-                      fontSize: 14,
-                      height: 1.45,
-                      color: isUser ? Colors.white : (isDark ? const Color(0xFFE5E7EB) : const Color(0xFF111827)),
-                    ),
-                  ),
+                  child: isUser
+                      ? Text(
+                          line.text,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            height: 1.45,
+                            color: Colors.white,
+                          ),
+                        )
+                      : _AiFormattedText(
+                          text: line.text,
+                          isDark: isDark,
+                        ),
                 ),
                 if (showAiBadge)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 4, left: 4),
-                    child: Text('Powered by AI', style: TextStyle(fontSize: 10, color: Color(0xFF2563EB))),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6, left: 2),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2563EB).withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.auto_awesome_rounded, size: 11, color: Color(0xFF7C3AED)),
+                          SizedBox(width: 4),
+                          Text(
+                            'Powered by AI',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF2563EB),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (showOfflineTip)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6, left: 2),
+                    child: Text(
+                      'Quick tip (AI unavailable — using catalog template)',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                        color: isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280),
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -462,42 +516,69 @@ class _BottomPanel extends StatelessWidget {
             children: [
               if (phase == _ChatPhase.course) ...[
                 if (loadingCourses)
-                  const Center(child: Padding(
-                    padding: EdgeInsets.all(12),
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ))
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(12),
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF2563EB)),
+                    ),
+                  )
                 else if (courses.isEmpty)
                   Text(
-                    'Sync your schedule to unlock course tips.',
+                    'Add courses in Profile → My courses or your weekly schedule, then return here.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280)),
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.35,
+                      color: isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280),
+                    ),
                   )
-                else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: courses.map((c) {
-                      return ActionChip(
-                        avatar: const Icon(Icons.menu_book_outlined, size: 16, color: Color(0xFF2563EB)),
-                        label: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
+                else ...[
+                  Text(
+                    'Select your course',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? const Color(0xFFE5E7EB) : const Color(0xFF111827),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: fetching ? null : () => _showCoursePicker(context),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Ink(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1F2937) : const Color(0xFFF9FAFB),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isDark ? const Color(0xFF374151) : const Color(0xFFE5E7EB),
+                          ),
+                        ),
+                        child: Row(
                           children: [
-                            Text(c.code, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
-                            if (c.name.isNotEmpty && c.name != c.code)
-                              Text(
-                                c.name,
+                            const Icon(Icons.menu_book_outlined, size: 20, color: Color(0xFF2563EB)),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Tap to choose from your schedule & profile',
                                 style: TextStyle(
-                                  fontSize: 10,
+                                  fontSize: 13,
                                   color: isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280),
                                 ),
                               ),
+                            ),
+                            Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              color: isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280),
+                            ),
                           ],
                         ),
-                        onPressed: fetching ? null : () => onCourse(c),
-                      );
-                    }).toList(),
+                      ),
+                    ),
                   ),
+                ],
               ] else if (phase == _ChatPhase.topic) ...[
                 ...ScheduleAiTopic.all.map((topic) {
                   return Padding(
@@ -538,6 +619,252 @@ class _BottomPanel extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showCoursePicker(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? const Color(0xFF111827) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        final screenH = MediaQuery.sizeOf(sheetContext).height;
+        final bottomInset = MediaQuery.paddingOf(sheetContext).bottom;
+        final sheetH = (screenH * 0.62).clamp(320.0, screenH * 0.88);
+
+        return Padding(
+          padding: EdgeInsets.only(bottom: bottomInset),
+          child: SizedBox(
+            height: sheetH,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 8),
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF4B5563) : const Color(0xFFD1D5DB),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 8, 4, 0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: Text(
+                            'Select your course',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: isDark ? const Color(0xFFE5E7EB) : const Color(0xFF111827),
+                            ),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.pop(sheetContext),
+                        color: isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    itemCount: courses.length,
+                    itemBuilder: (_, index) {
+                      final c = courses[index];
+                      final subtitle = c.name.isNotEmpty && c.name != c.code ? c.name : null;
+                      return ListTile(
+                        leading: const Icon(Icons.menu_book_outlined, color: Color(0xFF2563EB)),
+                        title: Text(
+                          c.code,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? const Color(0xFFE5E7EB) : const Color(0xFF111827),
+                          ),
+                        ),
+                        subtitle: subtitle != null
+                            ? Text(
+                                subtitle,
+                                style: TextStyle(
+                                  color: isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280),
+                                ),
+                              )
+                            : null,
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          onCourse(c);
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Renders common AI markdown (bold, bullets) without raw asterisks.
+class _AiFormattedText extends StatelessWidget {
+  const _AiFormattedText({required this.text, required this.isDark});
+
+  final String text;
+  final bool isDark;
+
+  TextStyle get _base => TextStyle(
+        fontSize: 14,
+        height: 1.5,
+        color: isDark ? const Color(0xFFE5E7EB) : const Color(0xFF111827),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = _normalizeLines(text);
+    final children = <Widget>[];
+
+    for (final trimmed in lines) {
+      if (trimmed.isEmpty) {
+        children.add(const SizedBox(height: 6));
+        continue;
+      }
+
+      if (_isBulletLine(trimmed)) {
+        children.add(_BulletLine(
+          content: _stripBullet(trimmed),
+          base: _base,
+          isDark: isDark,
+        ));
+        continue;
+      }
+
+      if (trimmed.startsWith('### ')) {
+        children.add(Padding(
+          padding: const EdgeInsets.only(bottom: 4, top: 2),
+          child: Text.rich(
+            TextSpan(children: _inlineSpans(trimmed.substring(4), _base.copyWith(fontWeight: FontWeight.w800, fontSize: 15))),
+          ),
+        ));
+        continue;
+      }
+
+      if (trimmed.startsWith('## ')) {
+        children.add(Padding(
+          padding: const EdgeInsets.only(bottom: 4, top: 2),
+          child: Text.rich(
+            TextSpan(children: _inlineSpans(trimmed.substring(3), _base.copyWith(fontWeight: FontWeight.w800, fontSize: 15))),
+          ),
+        ));
+        continue;
+      }
+
+      children.add(Text.rich(TextSpan(children: _inlineSpans(trimmed, _base))));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: children,
+    );
+  }
+
+  static List<String> _normalizeLines(String raw) {
+    final out = <String>[];
+    for (final line in raw.replaceAll('\r\n', '\n').split('\n')) {
+      var t = line.trimRight();
+      t = t.replaceAll(RegExp(r'\s*#{1,3}\s*$'), '').trimRight();
+      final s = t.trim();
+      if (RegExp(r'^#+$').hasMatch(s)) continue;
+      if (s.isNotEmpty) out.add(s);
+    }
+    return out;
+  }
+
+  static bool _isBulletLine(String line) {
+    if (line.startsWith('* ') || line.startsWith('- ') || line.startsWith('• ')) {
+      return true;
+    }
+    if (RegExp(r'^\*\*[^*]+\*\*').hasMatch(line)) return true;
+    return RegExp(r'^\d+\.\s').hasMatch(line);
+  }
+
+  static String _stripBullet(String line) {
+    if (line.startsWith('* ') || line.startsWith('- ') || line.startsWith('• ')) {
+      return line.substring(2).trim();
+    }
+    if (RegExp(r'^\d+\.\s').hasMatch(line)) {
+      return line.replaceFirst(RegExp(r'^\d+\.\s'), '').trim();
+    }
+    return line;
+  }
+
+  static List<InlineSpan> _inlineSpans(String input, TextStyle style) {
+    final spans = <InlineSpan>[];
+    final parts = input.split('**');
+    for (var i = 0; i < parts.length; i++) {
+      var chunk = parts[i];
+      if (chunk.isEmpty) continue;
+      chunk = chunk.replaceAll(RegExp(r'(?<!\*)\*(?!\*)'), '');
+      spans.add(TextSpan(
+        text: chunk,
+        style: i.isOdd ? style.copyWith(fontWeight: FontWeight.w700) : style,
+      ));
+    }
+    if (spans.isEmpty) {
+      spans.add(TextSpan(text: input.replaceAll('**', ''), style: style));
+    }
+    return spans;
+  }
+}
+
+class _BulletLine extends StatelessWidget {
+  const _BulletLine({
+    required this.content,
+    required this.base,
+    required this.isDark,
+  });
+
+  final String content;
+  final TextStyle base;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6, left: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 7),
+            width: 6,
+            height: 6,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(colors: [Color(0xFF2563EB), Color(0xFF7C3AED)]),
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text.rich(
+              TextSpan(children: _AiFormattedText._inlineSpans(content, base)),
+            ),
+          ),
+        ],
       ),
     );
   }
