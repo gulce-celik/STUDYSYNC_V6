@@ -149,6 +149,7 @@ public class AuthService {
         pending.setVerified(false);
 
         pendingRegistrationRepository.save(pending);
+        System.out.println("🔑 [STUDYSYNC OTP] Verification code for " + email + " is: " + otp);
         emailService.sendOtpEmail(email, otp);
 
         return new ActionResultDto(true, "Doğrulama kodu e-posta adresinize gönderildi.", null, null);
